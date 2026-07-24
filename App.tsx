@@ -1,209 +1,349 @@
-import { StatusBar } from 'expo-status-bar';
-import { useMemo, useState } from 'react';
+import { StatusBar } from "expo-status-bar";
+import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
   TextInput,
   View,
-} from 'react-native';
+} from "react-native";
 
-import agricultureQa from './src/data/agricultureQa.json';
-import type { AgricultureQaRecord } from './src/data/types';
+import { checkHealth, sendChat, sendFeedback } from "./src/api/chat";
+import type { ChatHistoryItem, UiMessage } from "./src/api/types";
+import { API_BASE_URL, SUGGESTED_QUESTIONS } from "./src/config";
 
-const records = agricultureQa as AgricultureQaRecord[];
+function makeId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 export default function App() {
-  const [query, setQuery] = useState('');
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<UiMessage[]>([
+    {
+      id: "welcome",
+      role: "assistant",
+      content:
+        "Hi — I’m တောင်သူ့ရဲ့ခေါင်, your farming assistant. Ask about crops, pests, diseases, fertilizer, or watering.\n\nAI advice is not a substitute for a local agriculture officer.",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [llmReady, setLlmReady] = useState(false);
+  const listRef = useRef<FlatList<UiMessage>>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return records;
-    return records.filter((item) => {
-      const haystack = [
-        item.crop,
-        item.topic,
-        item.question,
-        item.answer,
-        ...item.symptoms,
-        ...item.possible_causes,
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(q);
-    });
-  }, [query]);
+  useEffect(() => {
+    checkHealth()
+      .then((h) => {
+        setBackendOk(true);
+        setLlmReady(h.openrouter_configured);
+      })
+      .catch(() => {
+        setBackendOk(false);
+        setLlmReady(false);
+      });
+  }, []);
 
-  const selected = records.find((item) => item.id === selectedId) ?? null;
+  const historyForApi = (): ChatHistoryItem[] =>
+    messages
+      .filter((m) => m.id !== "welcome")
+      .slice(-6)
+      .map((m) => ({ role: m.role, content: m.content }));
+
+  const ask = async (raw: string) => {
+    const text = raw.trim();
+    if (!text || loading) return;
+
+    const userMsg: UiMessage = { id: makeId(), role: "user", content: text };
+    setMessages((prev) => [...prev, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const result = await sendChat(text, historyForApi());
+      const assistantMsg: UiMessage = {
+        id: makeId(),
+        role: "assistant",
+        content: result.answer,
+        crop: result.crop,
+        topic: result.topic,
+        intent: result.intent,
+        sources: result.sources,
+        usedLlm: result.used_llm,
+        outOfScope: result.out_of_scope,
+        feedback: null,
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+      setBackendOk(true);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not reach the backend.";
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: makeId(),
+          role: "assistant",
+          content: `Backend error: ${message}\n\nStart the API with:\ncd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000\n\nAPI URL: ${API_BASE_URL}`,
+        },
+      ]);
+      setBackendOk(false);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const onFeedback = async (msg: UiMessage, useful: boolean) => {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return;
+    try {
+      await sendFeedback({
+        message: lastUser.content,
+        answer: msg.content,
+        useful,
+        source_ids: (msg.sources ?? []).map((s) => s.id),
+      });
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === msg.id ? { ...m, feedback: useful ? "up" : "down" } : m,
+        ),
+      );
+    } catch {
+      // ignore feedback errors in MVP UI
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar style="dark" />
-      <View style={styles.header}>
-        <Text style={styles.brand}>တောင်သူ့ရဲ့ခေါင်</Text>
-        <Text style={styles.subtitle}>
-          Knowledge base preview · {records.length} English Q&A entries
-        </Text>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search crop, symptom, or question..."
-          placeholderTextColor="#6b7c6e"
-          style={styles.search}
-          autoCorrect={false}
-          autoCapitalize="none"
-        />
-      </View>
-
-      {selected ? (
-        <View style={styles.detail}>
-          <Pressable onPress={() => setSelectedId(null)} style={styles.backButton}>
-            <Text style={styles.backText}>← Back to list</Text>
-          </Pressable>
-          <Text style={styles.meta}>
-            {selected.crop} · {selected.topic}
-            {selected.verified ? ' · verified' : ''}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={8}
+      >
+        <View style={styles.header}>
+          <Text style={styles.brand}>တောင်သူ့ရဲ့ခေါင်</Text>
+          <Text style={styles.subtitle}>Farming NLP chatbot · text only</Text>
+          <Text style={styles.status}>
+            {backendOk === null
+              ? "Checking backend…"
+              : backendOk
+                ? `Backend online · ${llmReady ? "OpenRouter ready" : "retrieval-only (no API key)"}`
+                : `Backend offline · ${API_BASE_URL}`}
           </Text>
-          <Text style={styles.question}>{selected.question}</Text>
-          <Text style={styles.answer}>{selected.answer}</Text>
-          <Text style={styles.sectionLabel}>Symptoms</Text>
-          <Text style={styles.body}>{selected.symptoms.join(', ') || '—'}</Text>
-          <Text style={styles.sectionLabel}>Possible causes</Text>
-          <Text style={styles.body}>
-            {selected.possible_causes.join(', ') || '—'}
-          </Text>
-          <Text style={styles.sectionLabel}>Solution</Text>
-          <Text style={styles.body}>{selected.solution}</Text>
         </View>
-      ) : (
+
         <FlatList
-          data={filtered}
+          ref={listRef}
+          data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          ListEmptyComponent={
-            <Text style={styles.empty}>No matching knowledge entries.</Text>
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          ListHeaderComponent={
+            messages.length <= 1 ? (
+              <View style={styles.suggestions}>
+                <Text style={styles.suggestionsLabel}>Try asking</Text>
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <Pressable
+                    key={q}
+                    style={styles.chip}
+                    onPress={() => ask(q)}
+                    disabled={loading}
+                  >
+                    <Text style={styles.chipText}>{q}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null
           }
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.card}
-              onPress={() => setSelectedId(item.id)}
-            >
-              <Text style={styles.cardMeta}>
-                {item.crop} · {item.topic}
-              </Text>
-              <Text style={styles.cardQuestion}>{item.question}</Text>
-            </Pressable>
-          )}
+          renderItem={({ item }) => {
+            const isUser = item.role === "user";
+            const tags = [item.crop, item.topic || item.intent]
+              .filter(Boolean)
+              .join(" · ");
+            return (
+              <View
+                style={[
+                  styles.bubble,
+                  isUser ? styles.userBubble : styles.botBubble,
+                ]}
+              >
+                {!isUser && tags ? (
+                  <Text style={styles.tags}>{tags}</Text>
+                ) : null}
+                <Text style={[styles.bubbleText, isUser && styles.userText]}>
+                  {item.content}
+                </Text>
+                {!isUser && item.sources && item.sources.length > 0 ? (
+                  <Text style={styles.source}>
+                    Source: {item.sources.map((s) => s.id).join(", ")}
+                    {item.usedLlm ? " · LLM" : " · retrieval"}
+                  </Text>
+                ) : null}
+                {!isUser && item.id !== "welcome" && !item.outOfScope ? (
+                  <View style={styles.feedbackRow}>
+                    <Pressable
+                      onPress={() => onFeedback(item, true)}
+                      style={styles.feedbackBtn}
+                    >
+                      <Text
+                        style={[
+                          styles.feedbackText,
+                          item.feedback === "up" && styles.feedbackActive,
+                        ]}
+                      >
+                        👍 Useful
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => onFeedback(item, false)}
+                      style={styles.feedbackBtn}
+                    >
+                      <Text
+                        style={[
+                          styles.feedbackText,
+                          item.feedback === "down" && styles.feedbackActive,
+                        ]}
+                      >
+                        👎 Not useful
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            );
+          }}
         />
-      )}
+
+        <View style={styles.composer}>
+          <TextInput
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder="Type a farming question…"
+            placeholderTextColor="#6b7c6e"
+            editable={!loading}
+            multiline
+            onSubmitEditing={() => ask(input)}
+          />
+          <Pressable
+            style={[styles.send, (!input.trim() || loading) && styles.sendDisabled]}
+            onPress={() => ask(input)}
+            disabled={!input.trim() || loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.sendText}>Send</Text>
+            )}
+          </Pressable>
+        </View>
+        <Text style={styles.disclaimer}>
+          Disclaimer: not a substitute for local agricultural extension advice.
+        </Text>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: '#eef5ea',
-  },
+  safe: { flex: 1, backgroundColor: "#eef5ea" },
+  flex: { flex: 1 },
   header: {
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 16,
-    gap: 8,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#d7e5d9",
+    backgroundColor: "#eef5ea",
   },
-  brand: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1f3d2a',
+  brand: { fontSize: 24, fontWeight: "700", color: "#1f3d2a" },
+  subtitle: { fontSize: 13, color: "#4d6353", marginTop: 2 },
+  status: { fontSize: 12, color: "#2f6b45", marginTop: 6 },
+  list: { padding: 16, paddingBottom: 8, gap: 10 },
+  suggestions: { gap: 8, marginBottom: 12 },
+  suggestionsLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#5f7a64",
+    textTransform: "uppercase",
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#4d6353',
-  },
-  search: {
-    marginTop: 8,
+  chip: {
+    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: '#c5d6c8',
-    backgroundColor: '#fff',
+    borderColor: "#c5d6c8",
     borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  chipText: { color: "#1f3d2a", fontSize: 14 },
+  bubble: {
+    maxWidth: "92%",
+    borderRadius: 16,
     paddingHorizontal: 14,
     paddingVertical: 12,
-    fontSize: 16,
-    color: '#1f3d2a',
   },
-  list: {
-    paddingHorizontal: 20,
-    paddingBottom: 28,
-    gap: 10,
+  userBubble: {
+    alignSelf: "flex-end",
+    backgroundColor: "#2f6b45",
   },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
+  botBubble: {
+    alignSelf: "flex-start",
+    backgroundColor: "#fff",
     borderWidth: 1,
-    borderColor: '#d7e5d9',
+    borderColor: "#d7e5d9",
   },
-  cardMeta: {
-    fontSize: 12,
-    color: '#5f7a64',
+  tags: {
+    fontSize: 11,
+    color: "#5f7a64",
     marginBottom: 6,
-    textTransform: 'capitalize',
+    textTransform: "capitalize",
   },
-  cardQuestion: {
-    fontSize: 16,
-    color: '#1f3d2a',
-    fontWeight: '600',
-  },
-  empty: {
-    textAlign: 'center',
-    color: '#5f7a64',
-    marginTop: 40,
-  },
-  detail: {
-    flex: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 28,
+  bubbleText: { fontSize: 15, lineHeight: 22, color: "#24382c" },
+  userText: { color: "#fff" },
+  source: { marginTop: 8, fontSize: 11, color: "#5f7a64" },
+  feedbackRow: { flexDirection: "row", gap: 12, marginTop: 10 },
+  feedbackBtn: { paddingVertical: 2 },
+  feedbackText: { fontSize: 12, color: "#5f7a64" },
+  feedbackActive: { color: "#2f6b45", fontWeight: "700" },
+  composer: {
+    flexDirection: "row",
     gap: 8,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    alignItems: "flex-end",
   },
-  backButton: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  backText: {
-    color: '#2f6b45',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  meta: {
-    fontSize: 13,
-    color: '#5f7a64',
-    textTransform: 'capitalize',
-  },
-  question: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1f3d2a',
-    marginBottom: 4,
-  },
-  answer: {
+  input: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 120,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#c5d6c8",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     fontSize: 16,
-    lineHeight: 24,
-    color: '#24382c',
-    marginBottom: 8,
+    color: "#1f3d2a",
   },
-  sectionLabel: {
-    marginTop: 8,
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2f6b45',
-    textTransform: 'uppercase',
+  send: {
+    backgroundColor: "#2f6b45",
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  body: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#314539',
+  sendDisabled: { opacity: 0.5 },
+  sendText: { color: "#fff", fontWeight: "700" },
+  disclaimer: {
+    fontSize: 11,
+    color: "#6b7c6e",
+    textAlign: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
 });
