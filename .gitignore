@@ -1,41 +1,56 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# OS
+.DS_Store
+Thumbs.db
 
-# dependencies
-node_modules/
+# Env / secrets — never commit API keys
+.env
+.env.*
+!.env.example
+**/.env
+!**/.env.example
 
-# Expo
-.expo/
+# Python / backend
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+backend/feedback.jsonl
+*.egg-info/
 dist/
-web-build/
-expo-env.d.ts
+build/
 
-# Native
-.kotlin/
-*.orig.*
+# Node / Expo / mobile
+node_modules/
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/expo-env.d.ts
+mobile/.kotlin/
+mobile/ios/
+mobile/android/
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+*.tsbuildinfo
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# macOS
-.DS_Store
 *.pem
 
-# local env files
-.env*.local
+# Editor / local tooling
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
 
-# typescript
-*.tsbuildinfo
-
-# generated native folders
-/ios
-/android
+# Logs
+*.log
+.metro-health-check*

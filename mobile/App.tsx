@@ -124,24 +124,14 @@ export default function App() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         keyboardVerticalOffset={8}
       >
-        <View style={styles.header}>
-          <Text style={styles.brand}>တောင်သူ့ရဲ့ခေါင်</Text>
-          <Text style={styles.subtitle}>Farming NLP chatbot · text only</Text>
-          <Text style={styles.status}>
-            {backendOk === null
-              ? "Checking backend…"
-              : backendOk
-                ? `Backend online · ${llmReady ? "OpenRouter ready" : "retrieval-only (no API key)"}`
-                : `Backend offline · ${API_BASE_URL}`}
-          </Text>
-        </View>
-
         <FlatList
           ref={listRef}
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() =>
+            listRef.current?.scrollToEnd({ animated: true })
+          }
           ListHeaderComponent={
             messages.length <= 1 ? (
               <View style={styles.suggestions}>
@@ -230,7 +220,10 @@ export default function App() {
             onSubmitEditing={() => ask(input)}
           />
           <Pressable
-            style={[styles.send, (!input.trim() || loading) && styles.sendDisabled]}
+            style={[
+              styles.send,
+              (!input.trim() || loading) && styles.sendDisabled,
+            ]}
             onPress={() => ask(input)}
             disabled={!input.trim() || loading}
           >
@@ -241,9 +234,6 @@ export default function App() {
             )}
           </Pressable>
         </View>
-        <Text style={styles.disclaimer}>
-          Disclaimer: not a substitute for local agricultural extension advice.
-        </Text>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
