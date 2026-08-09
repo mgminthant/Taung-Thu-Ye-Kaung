@@ -1,5 +1,22 @@
-/** Change this if testing on a physical phone (use your computer LAN IP). */
-export const API_BASE_URL = "http://127.0.0.1:8000";
+import Constants from "expo-constants";
+
+/**
+ * Resolve the host that the Metro bundler is served from.
+ * - Web / simulator: hostUri is set by Expo.
+ * - Expo Go on a physical phone: hostUri is your computer's LAN IP,
+ *   so the backend at port 8000 on the same computer is reachable.
+ * Falls back to localhost.
+ */
+function resolveApiHost(): string {
+  const hostUri =
+    Constants.expoConfig?.hostUri ??
+    Constants.expoGoConfig?.debuggerHost ??
+    null;
+  const host = hostUri?.split(":")[0];
+  return host || "127.0.0.1";
+}
+
+export const API_BASE_URL = `http://${resolveApiHost()}:8000`;
 
 export const SUGGESTED_QUESTIONS = [
   "Why are my rice leaves turning yellow?",

@@ -36,3 +36,18 @@ export type UiMessage = {
   outOfScope?: boolean;
   feedback?: "up" | "down" | null;
 };
+
+export type Conversation = {
+  id: string;
+  title: string;
+  messages: UiMessage[];
+  createdAt: number;
+  updatedAt: number;
+};
+
+export const WELCOME_MESSAGE: UiMessage = {
+  id: "welcome",
+  role: "assistant",
+  content:
+    "Hi — I’m MrFarmer, your farming assistant. Ask about crops, pests, diseases, fertilizer, or watering.\n\nAI advice is not a substitute for a local agriculture officer.",
+};
