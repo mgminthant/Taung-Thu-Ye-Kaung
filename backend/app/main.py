@@ -67,7 +67,7 @@ async def chat(body: ChatRequest) -> ChatResponse:
         return ChatResponse(
             answer=OUT_OF_SCOPE_REPLY,
             intent="out_of_scope",
-            out_of_scope=True,
+            out_of_sc3ope=True,
             used_llm=False,
             sources=[],
         )

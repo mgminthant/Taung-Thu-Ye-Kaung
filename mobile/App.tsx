@@ -27,7 +27,7 @@ export default function App() {
       id: "welcome",
       role: "assistant",
       content:
-        "Hi — I’m တောင်သူ့ရဲ့ခေါင်, your farming assistant. Ask about crops, pests, diseases, fertilizer, or watering.\n\nAI advice is not a substitute for a local agriculture officer.",
+        "Hi — I’m MrFarmer, your farming assistant. Ask about crops, pests, diseases, fertilizer, or watering.\n\nAI advice is not a substitute for a local agriculture officer.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -35,6 +35,26 @@ export default function App() {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
   const [llmReady, setLlmReady] = useState(false);
   const listRef = useRef<FlatList<UiMessage>>(null);
+  const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scrollToBottom = () => {
+    if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+    if (settleTimeout.current) clearTimeout(settleTimeout.current);
+    scrollTimeout.current = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: true });
+    }, 120);
+    settleTimeout.current = setTimeout(() => {
+      listRef.current?.scrollToEnd({ animated: false });
+    }, 500);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
+      if (settleTimeout.current) clearTimeout(settleTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     checkHealth()
@@ -126,11 +146,18 @@ export default function App() {
       >
         <FlatList
           ref={listRef}
+          style={styles.flex}
           data={messages}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          onContentSizeChange={() =>
-            listRef.current?.scrollToEnd({ animated: true })
+          onContentSizeChange={scrollToBottom}
+          ListFooterComponent={
+            loading ? (
+              <View style={[styles.bubble, styles.botBubble, styles.typing]}>
+                <ActivityIndicator size="small" color="#2f6b45" />
+                <Text style={styles.typingText}>Thinking…</Text>
+              </View>
+            ) : null
           }
           ListHeaderComponent={
             messages.length <= 1 ? (
@@ -253,7 +280,7 @@ const styles = StyleSheet.create({
   brand: { fontSize: 24, fontWeight: "700", color: "#1f3d2a" },
   subtitle: { fontSize: 13, color: "#4d6353", marginTop: 2 },
   status: { fontSize: 12, color: "#2f6b45", marginTop: 6 },
-  list: { padding: 16, paddingBottom: 8, gap: 10 },
+  list: { padding: 16, paddingBottom: 90, gap: 10 },
   suggestions: { gap: 8, marginBottom: 12 },
   suggestionsLabel: {
     fontSize: 12,
@@ -268,6 +295,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
+    cursor: "pointer",
   },
   chipText: { color: "#1f3d2a", fontSize: 14 },
   bubble: {
@@ -292,8 +320,22 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textTransform: "capitalize",
   },
-  bubbleText: { fontSize: 15, lineHeight: 22, color: "#24382c" },
+  bubbleText: {
+    fontSize: 15,
+    lineHeight: 30,
+    color: "#24382c",
+    textAlignVertical: "top",
+  },
   userText: { color: "#fff" },
+  typing: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    alignSelf: "flex-start",
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  typingText: { fontSize: 13, color: "#5f7a64" },
   source: { marginTop: 8, fontSize: 11, color: "#5f7a64" },
   feedbackRow: { flexDirection: "row", gap: 12, marginTop: 10 },
   feedbackBtn: { paddingVertical: 2 },
@@ -315,9 +357,11 @@ const styles = StyleSheet.create({
     borderColor: "#c5d6c8",
     borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     fontSize: 16,
+    lineHeight: 24,
     color: "#1f3d2a",
+    textAlignVertical: "center",
   },
   send: {
     backgroundColor: "#2f6b45",

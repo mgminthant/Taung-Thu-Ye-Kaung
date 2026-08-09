@@ -54,3 +54,6 @@ yarn-error.*
 # Logs
 *.log
 .metro-health-check*
+.qwen
+/docs
+/prd.md
