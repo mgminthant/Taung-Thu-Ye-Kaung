@@ -14,7 +14,6 @@ import {
 } from "react-native";
 
 import type { UiMessage } from "../api/types";
-import { colors } from "../theme";
 import Composer from "./Composer";
 import MessageBubble from "./MessageBubble";
 import Suggestions from "./Suggestions";

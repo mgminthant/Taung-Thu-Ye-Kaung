@@ -216,7 +216,7 @@ Intent classification determines:
 
 > **"What does the farmer want to know?"**
 
-`Status: Partial` — a keyword-heuristic tagger (`guess_intent`) runs today; the full 10-intent taxonomy + a proper classifier + eval set are `Future`.
+`Status: Partial` — a keyword-heuristic tagger (`guess_intent`) runs today; the **LLM-driven classifier** over the 10-intent taxonomy + eval set is `Future`.
 
 ### Current implementation (Built)
 
@@ -249,7 +249,9 @@ Start with approximately 8–10 broad categories — do not create hundreds of i
 | PREVENTION | ဘယ်လိုကာကွယ်ရမလဲ |
 | OTHER | အခြား |
 
-### Example output (target)
+### Target approach (Future — LLM-driven)
+
+One LLM call classifies the intent **and** extracts the entities as structured JSON (see [§10](#10-intent--ner-together)), replacing the keyword tagger. The structured result drives query building and (optionally) filters retrieval:
 
 For:
 
@@ -259,7 +261,11 @@ The system produces:
 
 ```json
 {
-  "intent": "DISEASE_TREATMENT"
+  "intent": "DISEASE_TREATMENT",
+  "entities": {
+    "crop": "rice",
+    "disease": "blast"
+  }
 }
 ```
 
@@ -271,7 +277,13 @@ NER determines:
 
 > **"What agricultural things is the farmer talking about?"**
 
-`Status: Future` — designed, not yet built. Today crop/topic only come from the matched knowledge record, not from explicit entity extraction.
+`Status: Future` — designed, not yet built. Today crop/category only come from the matched knowledge record, not from explicit entity extraction.
+
+### Planned approach (LLM-first)
+
+- **Primary:** the **LLM extracts intent + NER together** in one structured call (see [§10](#10-intent--ner-together)) → JSON `{intent, crop, disease, pest, symptom, plant_part, location}`.
+- **Fallback / offline:** lexicon/rule-based extraction (crop, disease, pest, symptom dictionaries derived from the knowledge base) when no LLM key is configured.
+- **Evaluation:** Precision / Recall / F1 against a labeled eval set (see [Evaluation](#24-evaluation)).
 
 ### Initial Entity Types
 
@@ -310,7 +322,7 @@ Structured result:
 }
 ```
 
-**Planned approach:** start with lexicon/rule-based extraction (crop, disease, pest, symptom dictionaries derived from the knowledge base) → optionally upgrade to an LLM-assisted extractor → measure with Precision / Recall / F1 against a labeled eval set (see [Evaluation](#24-evaluation)).
+**Planned approach:** the LLM extracts intent + entities in one structured JSON call (primary), with lexicon/rule-based extraction as an offline fallback; measured with Precision / Recall / F1 against a labeled eval set (see [Evaluation](#24-evaluation)).
 
 ---
 
@@ -349,7 +361,7 @@ Disease:
 Blast
 ```
 
-This information can then be used to (a) filter retrieval and (b) feed the analytics / data mining datasets.
+This information can then be used to (a) build the retrieval query (query + intent + entities), (b) filter retrieval (e.g. restrict to the detected crop), and (c) feed the analytics / data mining datasets — see the [target RAG pipeline](#14-rag-pipeline).
 
 ---
 
@@ -493,39 +505,65 @@ Source: internal
 
 ## 14. RAG Pipeline
 
-`Status: Built`
+`Status: Built` (current) / `Future` (target — LLM Intent + NER stage)
+
+### Target pipeline (designed — LLM-driven Intent + NER)
 
 ```text
-User Question
-      │
-      ▼
-Normalization
-      │
-      ├──────────────┐
-      ▼              ▼
-Intent             NER   (NER: Future)
-      │              │
-      └──────┬───────┘
-             ▼
-       Query Embedding
-             │
-             ▼
-       Vector Search
-             │
-             ▼
-   Relevant Knowledge Chunks
-             │
-             ▼
-        Context Builder
-             │
-             ▼
-             LLM
-             │
-             ▼
-          Answer
+USER
+  │
+  ▼
+Question
+  │
+  ▼
+Myanmar Normalization
+  │
+  ▼
+  ┌──────────────┐
+  │      LLM     │
+  │              │
+  │ Intent + NER │          ← Future stage: one call returns structured JSON
+  └──────┬───────┘
+         │
+ Structured result  {intent, crop, disease, pest, symptom, plant_part, location}
+         │
+         ▼
+Query + Intent + Entities          ← entities used to build/filter the query
+         │
+         ▼
+multilingual-e5-small              ← embedding (current: intfloat/multilingual-e5-small)
+         │
+         ▼
+ChromaDB
+         │
+      Top 10/20
+         │
+         ▼
+mmarco-mMiniLMv2-L12-H384          ← cross-encoder re-rank (current model)
+         │
+      Top 3–5
+         │
+         ▼
+RAG Context
+         │
+         ▼
+LLM
+         │
+         ▼
+Answer
+         │
+         ▼
+Feedback
+         │
+         ▼
+Data Mining & Analysis
 ```
 
+### Current implementation (Built)
+
 The current implementation (`backend/app/rag.py`) runs: semantic search → cross-encoder relevance check → keyword fallback → farming gate → **knowledge check** → LLM grounded in the retrieved `CONTEXT`. If the knowledge base has **no strong match**, the LLM is **never called** and the bot replies "I haven't learned that yet." If no LLM key is configured (or the LLM fails), it degrades to a structured answer from the best-matching article.
+
+The **target pipeline above** upgrades the NLP front-end: the keyword heuristic tagger (`guess_intent`) is replaced by an LLM that classifies the 10-intent taxonomy **and** extracts entities (NER) in a single structured call, and those entities are then used to build the retrieval query and (optionally) filter the ChromaDB results before re-ranking.
 
 ---
 
@@ -709,7 +747,7 @@ Use historical data to classify:
 Question → Intent
 ```
 
-Initially: NLP/AI-based classifier. Later, with enough labeled data, train an ML classifier and compare performance (Accuracy / Precision / Recall / F1).
+Initially: the LLM-driven intent classifier (structured JSON). Later, with enough labeled data, train an ML classifier and compare performance (Accuracy / Precision / Recall / F1).
 
 ### 19.3 Association Analysis
 
@@ -878,7 +916,7 @@ The backend keeps the **current stack** (no rewrite to ASP.NET/Node).
 | Layer | Technology |
 | --- | --- |
 | Admin Portal | Next.js + Tailwind CSS + Recharts / Chart.js |
-| NER + Intent models | Lexicon/rule-based first, ML classifier later |
+| NER + Intent | LLM-driven extraction (one structured JSON call); lexicon/rule-based fallback for offline mode |
 | Data Mining / Analysis | Python — Pandas, NumPy, Scikit-learn, Matplotlib |
 | Database (optional) | PostgreSQL / MySQL when KB outgrows CSV |
 
@@ -1030,8 +1068,8 @@ This separation matters for the thesis/presentation: **AI is not used just becau
 | Keyword retrieval fallback | Built | `backend/app/retrieval.py` |
 | Farming gate / out-of-scope refusal | Built | `backend/app/retrieval.py` + `rag.py` |
 | Intent tagging (6 keyword intents) | Built | `backend/app/retrieval.py` |
-| 10-intent taxonomy + classifier + eval set | Future | — |
-| NER (CROP/DISEASE/PEST/SYMPTOM/...) | Future | — |
+| 10-intent taxonomy + LLM-driven classifier + eval set | Future | one LLM call → structured JSON |
+| NER via LLM (CROP/DISEASE/PEST/SYMPTOM/...) + lexicon fallback | Future | `prd.md` §9 |
 | "I haven't learned that yet" no-knowledge reply | Built | `backend/app/rag.py` |
 | RAG LLM generation (OpenRouter, grounded only) | Built | `backend/app/llm.py` + `rag.py` |
 | Retrieval confidence threshold | Built | `backend/app/config.py` |
@@ -1058,7 +1096,7 @@ This separation matters for the thesis/presentation: **AI is not used just becau
 ### Phase 1 — Stronger NLP (next)
 1. Explicit **text normalization** module (Zawgyi→Unicode, diacritics, spacing).
 2. Upgrade **intent classification** to the 10-intent taxonomy.
-3. **NER** module (lexicon/rule-based first; crop/disease/pest/symptom dictionaries from the KB).
+3. **NER + intent** module — LLM-driven extraction (one structured JSON call); lexicon/rule-based fallback for offline mode.
 4. Build the **interaction dataset** (log intent, entities, similarity scores, response time per question).
 5. Build **evaluation sets** and report §24 metrics.
 

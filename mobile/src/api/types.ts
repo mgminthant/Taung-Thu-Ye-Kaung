@@ -45,9 +45,9 @@ export type Conversation = {
   updatedAt: number;
 };
 
-export const WELCOME_MESSAGE: UiMessage = {
-  id: "welcome",
-  role: "assistant",
-  content:
-    "Hi — I’m MrFarmer, your farming assistant. Ask about crops, pests, diseases, fertilizer, or watering.\n\nAI advice is not a substitute for a local agriculture officer.",
-};
+export const WELCOME_MESSAGE_ID = "welcome";
+
+/** Build the assistant welcome bubble with a localized greeting. */
+export function makeWelcomeMessage(content: string): UiMessage {
+  return { id: WELCOME_MESSAGE_ID, role: "assistant", content };
+}

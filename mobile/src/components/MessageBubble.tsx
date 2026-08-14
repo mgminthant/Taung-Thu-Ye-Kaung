@@ -3,10 +3,12 @@
  * Assistant bubbles show metadata (crop/topic tags, source ids) and
  * a 👍 / 👎 feedback row; user bubbles are a plain green bubble.
  */
+import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { UiMessage } from "../api/types";
-import { colors } from "../theme";
+import { useSettings } from "../settings";
+import type { ThemeColors } from "../theme";
 
 type Props = {
   message: UiMessage;
@@ -14,6 +16,9 @@ type Props = {
 };
 
 export default function MessageBubble({ message, onFeedback }: Props) {
+  const { colors, t } = useSettings();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+
   const isUser = message.role === "user";
   const tags = [message.crop, message.topic || message.intent]
     .filter(Boolean)
@@ -32,8 +37,8 @@ export default function MessageBubble({ message, onFeedback }: Props) {
 
       {!isUser && message.sources && message.sources.length > 0 ? (
         <Text style={styles.source}>
-          Source: {message.sources.map((s) => s.id).join(", ")}
-          {message.usedLlm ? " · LLM" : " · retrieval"}
+          {t.message.source}: {message.sources.map((s) => s.id).join(", ")}
+          {message.usedLlm ? ` · ${t.message.llm}` : ` · ${t.message.retrieval}`}
         </Text>
       ) : null}
 
@@ -49,7 +54,7 @@ export default function MessageBubble({ message, onFeedback }: Props) {
                 message.feedback === "up" && styles.feedbackActive,
               ]}
             >
-              👍 Useful
+              👍 {t.message.useful}
             </Text>
           </Pressable>
           <Pressable
@@ -62,7 +67,7 @@ export default function MessageBubble({ message, onFeedback }: Props) {
                 message.feedback === "down" && styles.feedbackActive,
               ]}
             >
-              👎 Not useful
+              👎 {t.message.notUseful}
             </Text>
           </Pressable>
         </View>
@@ -71,39 +76,40 @@ export default function MessageBubble({ message, onFeedback }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  bubble: {
-    maxWidth: "92%",
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  userBubble: {
-    alignSelf: "flex-end",
-    backgroundColor: colors.primary,
-  },
-  botBubble: {
-    alignSelf: "flex-start",
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  tags: {
-    fontSize: 11,
-    color: colors.muted,
-    marginBottom: 6,
-    textTransform: "capitalize",
-  },
-  text: {
-    fontSize: 15,
-    lineHeight: 30,
-    color: colors.textBody,
-    textAlignVertical: "top",
-  },
-  userText: { color: "#fff" },
-  source: { marginTop: 8, fontSize: 11, color: colors.muted },
-  feedbackRow: { flexDirection: "row", gap: 12, marginTop: 10 },
-  feedbackBtn: { paddingVertical: 2 },
-  feedbackText: { fontSize: 12, color: colors.muted },
-  feedbackActive: { color: colors.primary, fontWeight: "700" },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    bubble: {
+      maxWidth: "92%",
+      borderRadius: 16,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+    },
+    userBubble: {
+      alignSelf: "flex-end",
+      backgroundColor: colors.primary,
+    },
+    botBubble: {
+      alignSelf: "flex-start",
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+    },
+    tags: {
+      fontSize: 11,
+      color: colors.muted,
+      marginBottom: 6,
+      textTransform: "capitalize",
+    },
+    text: {
+      fontSize: 15,
+      lineHeight: 30,
+      color: colors.textBody,
+      textAlignVertical: "top",
+    },
+    userText: { color: "#fff" },
+    source: { marginTop: 8, fontSize: 11, color: colors.muted },
+    feedbackRow: { flexDirection: "row", gap: 12, marginTop: 10 },
+    feedbackBtn: { paddingVertical: 2 },
+    feedbackText: { fontSize: 12, color: colors.muted },
+    feedbackActive: { color: colors.primary, fontWeight: "700" },
+  });

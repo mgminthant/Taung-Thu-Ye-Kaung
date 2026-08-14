@@ -8,8 +8,10 @@
  *    via measureInWindow, rendered in its own Modal so it can never be clipped
  *    or overlap the drawer header
  *  - a Rename modal with a text input
+ *  - a settings footer: dark/light mode switch + English/Myanmar switcher
  */
-import { useRef, useState } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useMemo, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -19,6 +21,7 @@ import {
   Platform,
   Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -26,7 +29,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Conversation } from "../api/types";
-import { colors } from "../theme";
+import { useSettings } from "../settings";
+import type { ThemeColors } from "../theme";
 
 type Props = {
   /** Whether the drawer is currently rendered (true during open+close). */
@@ -64,6 +68,8 @@ export default function HistoryDrawer({
   onClose,
 }: Props) {
   const insets = useSafeAreaInsets();
+  const { colors, t, isDark, lang, toggleTheme, setLang } = useSettings();
+  const styles = useMemo(() => createStyles(colors), [colors]);
 
   // The ⋮ menu: holds which row it is open for and its screen coordinates.
   const [menuFor, setMenuFor] = useState<MenuPos | null>(null);
@@ -137,19 +143,19 @@ export default function HistoryDrawer({
         <Pressable style={styles.flex} onPress={onClose} />
       </Animated.View>
 
-      <Animated.View
-        style={[styles.drawer, { transform: [{ translateX }] }]}
-      >
+      <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
         {/* Drawer header (pushed below the status bar via safe-area inset). */}
         <View style={[styles.drawerHeader, { paddingTop: insets.top + 12 }]}>
-          <Text style={styles.drawerTitle}>Chats</Text>
+          <Text style={styles.drawerTitle}>{t.drawer.chats}</Text>
           <Pressable
             style={[styles.newChatBtn, isFreshActive && styles.newChatDisabled]}
             onPress={onNewChat}
             disabled={isFreshActive}
-            accessibilityLabel="Start new chat"
+            accessibilityRole="button"
+            accessibilityLabel={t.drawer.startNewChat}
           >
-            <Text style={styles.newChatText}>＋ New chat</Text>
+            <Ionicons name="add" size={16} color="#fff" />
+            <Text style={styles.newChatText}>{t.drawer.newChat}</Text>
           </Pressable>
         </View>
 
@@ -163,7 +169,7 @@ export default function HistoryDrawer({
             const isActive = item.id === activeId;
             const preview =
               [...item.messages].reverse().find((m) => m.id !== "welcome")
-                ?.content ?? "No messages yet";
+                ?.content ?? t.drawer.noMessagesYet;
             return (
               <View
                 style={styles.drawerRow}
@@ -192,17 +198,86 @@ export default function HistoryDrawer({
                   style={styles.moreBtn}
                   onPress={() => toggleMenu(item.id)}
                   hitSlop={6}
-                  accessibilityLabel={`Actions for ${item.title}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${t.drawer.actionsFor} ${item.title}`}
                 >
-                  <Text style={styles.moreText}>⋮</Text>
+                  <Ionicons
+                    name="ellipsis-horizontal"
+                    size={20}
+                    color={colors.muted}
+                  />
                 </Pressable>
               </View>
             );
           }}
           ListEmptyComponent={
-            <Text style={styles.drawerEmpty}>No chats yet</Text>
+            <Text style={styles.drawerEmpty}>{t.drawer.noChatsYet}</Text>
           }
         />
+
+        {/* Settings footer: theme + language switchers. */}
+        <View
+          style={[
+            styles.settingsFooter,
+            { paddingBottom: Math.max(insets.bottom, 12) },
+          ]}
+        >
+          <View style={styles.settingsRow}>
+            <Ionicons
+              name={isDark ? "sunny-outline" : "moon-outline"}
+              size={18}
+              color={colors.textDark}
+            />
+            <Text style={styles.settingsLabel}>{t.settings.darkMode}</Text>
+            <Switch
+              value={isDark}
+              onValueChange={toggleTheme}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor={isDark ? colors.white : "#f4f3f4"}
+            />
+          </View>
+
+          <View style={styles.settingsRow}>
+            <Ionicons
+              name="language-outline"
+              size={18}
+              color={colors.textDark}
+            />
+            <Text style={styles.settingsLabel}>{t.settings.language}</Text>
+            <View style={styles.langGroup}>
+              <Pressable
+                style={[styles.langBtn, lang === "en" && styles.langBtnActive]}
+                onPress={() => setLang("en")}
+                accessibilityRole="button"
+                accessibilityState={{ selected: lang === "en" }}
+              >
+                <Text
+                  style={[
+                    styles.langBtnText,
+                    lang === "en" && styles.langBtnTextActive,
+                  ]}
+                >
+                  English
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.langBtn, lang === "mm" && styles.langBtnActive]}
+                onPress={() => setLang("mm")}
+                accessibilityRole="button"
+                accessibilityState={{ selected: lang === "mm" }}
+              >
+                <Text
+                  style={[
+                    styles.langBtnText,
+                    lang === "mm" && styles.langBtnTextActive,
+                  ]}
+                >
+                  {t.settings.myanmar}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
       </Animated.View>
 
       {/* Rename modal */}
@@ -218,26 +293,26 @@ export default function HistoryDrawer({
         >
           <Pressable style={styles.modalScrim} onPress={cancelRename} />
           <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Rename chat</Text>
+            <Text style={styles.modalTitle}>{t.drawer.renameChat}</Text>
             <TextInput
               style={styles.modalInput}
               value={renameValue}
               onChangeText={setRenameValue}
               autoFocus
-              placeholder="Chat name"
+              placeholder={t.drawer.chatName}
               placeholderTextColor={colors.mutedLight}
               onSubmitEditing={saveRename}
             />
             <View style={styles.modalActions}>
               <Pressable style={styles.modalBtn} onPress={cancelRename}>
-                <Text style={styles.modalBtnText}>Cancel</Text>
+                <Text style={styles.modalBtnText}>{t.drawer.cancel}</Text>
               </Pressable>
               <Pressable
                 style={[styles.modalBtn, styles.modalBtnPrimary]}
                 onPress={saveRename}
               >
                 <Text style={[styles.modalBtnText, styles.modalBtnPrimaryText]}>
-                  Save
+                  {t.drawer.save}
                 </Text>
               </Pressable>
             </View>
@@ -260,14 +335,16 @@ export default function HistoryDrawer({
               style={styles.menuItem}
               onPress={() => startRename(menuItem)}
             >
-              <Text style={styles.menuItemText}>✎ Rename</Text>
+              <Ionicons name="create-outline" size={16} color={colors.textDark} />
+              <Text style={styles.menuItemText}>{t.drawer.rename}</Text>
             </Pressable>
             <Pressable
               style={[styles.menuItem, styles.menuItemDanger]}
               onPress={() => onDeleteConversation(menuItem.id)}
             >
+              <Ionicons name="trash-outline" size={16} color={colors.danger} />
               <Text style={[styles.menuItemText, styles.menuDangerText]}>
-                Delete
+                {t.drawer.delete}
               </Text>
             </Pressable>
           </View>
@@ -277,139 +354,170 @@ export default function HistoryDrawer({
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  overlay: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-  },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.backdrop,
-  },
-  drawer: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    width: "82%",
-    maxWidth: 340,
-    backgroundColor: colors.drawerBg,
-    borderRightWidth: 1,
-    borderRightColor: colors.borderLight,
-  },
-  drawerHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-  },
-  drawerTitle: { fontSize: 15, fontWeight: "700", color: colors.textDark },
-  newChatBtn: {
-    backgroundColor: colors.primary,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  newChatText: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  newChatDisabled: { opacity: 0.4 },
-  drawerList: { flex: 1 },
-  drawerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    position: "relative",
-  },
-  drawerItem: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingRight: 48,
-    paddingVertical: 12,
-    gap: 2,
-  },
-  drawerItemActive: { backgroundColor: colors.activeBg },
-  drawerTitleActive: { color: colors.primary },
-  drawerPreview: { fontSize: 12, color: colors.muted },
-  moreBtn: {
-    position: "absolute",
-    right: 4,
-    top: 0,
-    bottom: 0,
-    width: 36,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  moreText: { fontSize: 22, color: colors.muted, fontWeight: "700" },
-  drawerEmpty: { padding: 16, color: colors.muted },
-  menuScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "transparent",
-  },
-  menu: {
-    position: "absolute",
-    width: MENU_WIDTH,
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-    paddingVertical: 4,
-    shadowColor: colors.textDark,
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 6,
-  },
-  menuItem: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  menuItemText: { fontSize: 14, color: colors.textDark },
-  menuItemDanger: {
-    borderTopWidth: 1,
-    borderTopColor: "#eef2ec",
-  },
-  menuDangerText: { color: colors.danger },
-  modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center" },
-  modalScrim: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: colors.modalBackdrop,
-  },
-  modalCard: {
-    width: "82%",
-    maxWidth: 340,
-    backgroundColor: colors.drawerBg,
-    borderRadius: 16,
-    padding: 18,
-    gap: 12,
-  },
-  modalTitle: { fontSize: 17, fontWeight: "700", color: colors.textDark },
-  modalInput: {
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.textDark,
-  },
-  modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
-  modalBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  modalBtnText: { fontSize: 14, color: colors.muted, fontWeight: "600" },
-  modalBtnPrimary: { backgroundColor: colors.primary },
-  modalBtnPrimaryText: { color: "#fff" },
-});
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    flex: { flex: 1 },
+    overlay: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      flexDirection: "row",
+    },
+    backdrop: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 0,
+      right: 0,
+      backgroundColor: colors.backdrop,
+    },
+    drawer: {
+      position: "absolute",
+      top: 0,
+      bottom: 0,
+      left: 0,
+      width: "82%",
+      maxWidth: 340,
+      backgroundColor: colors.drawerBg,
+      borderRightWidth: 1,
+      borderRightColor: colors.borderLight,
+    },
+    drawerHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      paddingHorizontal: 16,
+      paddingBottom: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.borderLight,
+    },
+    drawerTitle: { fontSize: 15, fontWeight: "700", color: colors.textDark },
+    newChatBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 2,
+      backgroundColor: colors.primary,
+      borderRadius: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+    },
+    newChatText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+    newChatDisabled: { opacity: 0.4 },
+    drawerList: { flex: 1 },
+    drawerRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      position: "relative",
+    },
+    drawerItem: {
+      flex: 1,
+      paddingHorizontal: 16,
+      paddingRight: 48,
+      paddingVertical: 12,
+      gap: 2,
+    },
+    drawerItemActive: { backgroundColor: colors.activeBg },
+    drawerTitleActive: { color: colors.primary },
+    drawerPreview: { fontSize: 12, color: colors.muted },
+    moreBtn: {
+      position: "absolute",
+      right: 4,
+      top: 0,
+      bottom: 0,
+      width: 36,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    drawerEmpty: { padding: 16, color: colors.muted },
+    settingsFooter: {
+      borderTopWidth: 1,
+      borderTopColor: colors.borderLight,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      gap: 12,
+    },
+    settingsRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+    },
+    settingsLabel: { flex: 1, fontSize: 14, color: colors.textDark },
+    langGroup: {
+      flexDirection: "row",
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      overflow: "hidden",
+    },
+    langBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+    langBtnActive: { backgroundColor: colors.primary },
+    langBtnText: { fontSize: 13, color: colors.muted, fontWeight: "600" },
+    langBtnTextActive: { color: "#fff" },
+    menuScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: "transparent",
+    },
+    menu: {
+      position: "absolute",
+      width: MENU_WIDTH,
+      backgroundColor: colors.white,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.borderLight,
+      paddingVertical: 4,
+      shadowColor: colors.textDark,
+      shadowOpacity: 0.18,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 3 },
+      elevation: 6,
+    },
+    menuItem: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+    },
+    menuItemText: { fontSize: 14, color: colors.textDark },
+    menuItemDanger: {
+      borderTopWidth: 1,
+      borderTopColor: colors.menuDivider,
+    },
+    menuDangerText: { color: colors.danger },
+    modalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center" },
+    modalScrim: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: colors.modalBackdrop,
+    },
+    modalCard: {
+      width: "82%",
+      maxWidth: 340,
+      backgroundColor: colors.drawerBg,
+      borderRadius: 16,
+      padding: 18,
+      gap: 12,
+    },
+    modalTitle: { fontSize: 17, fontWeight: "700", color: colors.textDark },
+    modalInput: {
+      backgroundColor: colors.white,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: 15,
+      color: colors.textDark,
+    },
+    modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
+    modalBtn: {
+      borderRadius: 10,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+    },
+    modalBtnText: { fontSize: 14, color: colors.muted, fontWeight: "600" },
+    modalBtnPrimary: { backgroundColor: colors.primary },
+    modalBtnPrimaryText: { color: "#fff" },
+  });

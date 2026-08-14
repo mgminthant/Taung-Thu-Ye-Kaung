@@ -20,7 +20,7 @@ import type {
   Conversation,
   UiMessage,
 } from "../api/types";
-import { WELCOME_MESSAGE } from "../api/types";
+import { makeWelcomeMessage } from "../api/types";
 import {
   loadActiveId,
   loadConversations,
@@ -31,6 +31,7 @@ import {
   titleForMessages,
 } from "../chatStore";
 import { API_BASE_URL } from "../config";
+import { useSettings } from "../settings";
 
 /** Format the last few messages for the API so the model has context. */
 function historyForApi(msgs: UiMessage[]): ChatHistoryItem[] {
@@ -46,6 +47,7 @@ function backendErrorText(message: string): string {
 }
 
 export function useChat() {
+  const { t } = useSettings();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -82,7 +84,7 @@ export function useChat() {
         loadActiveId(),
       ]);
       // First ever launch: create one welcome conversation.
-      let next = list.length > 0 ? list : [makeConversation([WELCOME_MESSAGE])];
+      let next = list.length > 0 ? list : [makeConversation([makeWelcomeMessage(t.welcome)])];
       if (list.length === 0) {
         await saveConversations(next);
       }
@@ -142,7 +144,7 @@ export function useChat() {
 
   const newChat = () => {
     if (drawerOpenRef.current) closeDrawer();
-    const convo = makeConversation([WELCOME_MESSAGE]);
+    const convo = makeConversation([makeWelcomeMessage(t.welcome)]);
     setConversations((prev) => [...prev, convo]);
     setActiveId(convo.id);
   };
@@ -157,7 +159,7 @@ export function useChat() {
       const rest = prev.filter((c) => c.id !== id);
       // Never leave the app with zero conversations.
       if (rest.length === 0) {
-        const fresh = makeConversation([WELCOME_MESSAGE]);
+        const fresh = makeConversation([makeWelcomeMessage(t.welcome)]);
         setActiveId(fresh.id);
         return [fresh];
       }

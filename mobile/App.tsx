@@ -2,11 +2,11 @@
  * App — composition root.
  *
  * Wraps everything in SafeAreaProvider (needed by useSafeAreaInsets and
- * the safe-area SafeAreaView), loads the chat state via the useChat hook,
- * and renders the four main UI blocks:
+ * the safe-area SafeAreaView), SettingsProvider (theme + language), loads the
+ * chat state via the useChat hook, and renders the four main UI blocks:
  *   Header        → history button + new chat button
  *   ChatScreen    → message list + composer
- *   HistoryDrawer → past-chats panel + rename/delete menus
+ *   HistoryDrawer → past-chats panel + rename/delete menus + settings
  *
  * ChatScreen is keyed by the active conversation so switching chats
  * remounts it (resetting the input and scroll position).
@@ -22,24 +22,27 @@ import ChatScreen from "./src/components/ChatScreen";
 import Header from "./src/components/Header";
 import HistoryDrawer from "./src/components/HistoryDrawer";
 import { useChat } from "./src/hooks/useChat";
-import { colors } from "./src/theme";
+import { SettingsProvider, useSettings } from "./src/settings";
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AppShell />
+      <SettingsProvider>
+        <AppShell />
+      </SettingsProvider>
     </SafeAreaProvider>
   );
 }
 
 function AppShell() {
   const chat = useChat();
+  const { colors, isDark } = useSettings();
 
   // Show a spinner while conversations load from local storage.
   if (!chat.hydrated) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <StatusBar style="dark" />
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+        <StatusBar style={isDark ? "light" : "dark"} />
         <View style={styles.center}>
           <ActivityIndicator color={colors.primary} />
         </View>
@@ -48,8 +51,8 @@ function AppShell() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar style="dark" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+      <StatusBar style={isDark ? "light" : "dark"} />
 
       <Header
         onOpenDrawer={chat.openDrawer}
@@ -82,6 +85,6 @@ function AppShell() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
+  safe: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
 });

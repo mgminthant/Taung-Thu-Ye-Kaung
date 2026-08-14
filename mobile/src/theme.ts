@@ -1,8 +1,11 @@
 /**
- * Shared palette + layout constants used across all components.
- * Keeping them in one file makes it easy to restyle the whole app.
+ * Theme palettes + helper types.
+ *
+ * Components should read the active palette via `useSettings()` (see
+ * `settings.tsx`) rather than importing `lightColors` directly, so styles
+ * react to the light/dark switcher in the sidebar.
  */
-export const colors = {
+export const lightColors = {
   /** App background (soft green). */
   bg: "#eef5ea",
   /** Brand green used for buttons, accents and user bubbles. */
@@ -31,4 +34,36 @@ export const colors = {
   backdrop: "rgba(31, 61, 42, 0.35)",
   /** Dim overlay behind modals. */
   modalBackdrop: "rgba(31, 61, 42, 0.4)",
+  /** Divider inside the ⋮ actions menu. */
+  menuDivider: "#eef2ec",
 } as const;
+
+export const darkColors: ThemeColors = {
+  bg: "#0e1510",
+  primary: "#3f8f5f",
+  textDark: "#e6f0e8",
+  textBody: "#d4e2d8",
+  muted: "#8fa898",
+  mutedLight: "#6b8173",
+  border: "#2c4234",
+  borderLight: "#223326",
+  white: "#1a251d",
+  danger: "#e07b7b",
+  drawerBg: "#121c15",
+  activeBg: "#1f3a29",
+  backdrop: "rgba(0, 0, 0, 0.55)",
+  modalBackdrop: "rgba(0, 0, 0, 0.6)",
+  menuDivider: "#243326",
+};
+
+/** Palette shape — any color key → a CSS color string. */
+export type ThemeColors = {
+  [K in keyof typeof lightColors]: string;
+};
+
+export type ThemeName = "light" | "dark";
+
+/** Resolve the active palette for a theme name. */
+export function getColors(theme: ThemeName): ThemeColors {
+  return theme === "dark" ? darkColors : lightColors;
+}
