@@ -1,3 +1,8 @@
+"""FastAPI application: HTTP routes only.
+
+All chat logic lives in rag.py (RagPipeline); this file only wires the
+endpoints, CORS, and startup bootstrap. Keep it thin.
+"""
 from __future__ import annotations
 
 import json
@@ -9,26 +14,32 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .knowledge import load_knowledge
-from .llm import OUT_OF_SCOPE_REPLY, generate_answer, strip_markdown_noise
-from .retrieval import (
-    format_context,
-    guess_intent,
-    looks_like_farming,
-    retrieve,
-    structured_from_record,
-)
+from .rag import RagPipeline
 from .schemas import (
     ChatRequest,
     ChatResponse,
     FeedbackRequest,
     FeedbackResponse,
     HealthResponse,
-    RetrievedSource,
 )
+from .vectorstore import VectorStore
 
+# Feedback responses are appended here as JSON-lines for later analysis.
 FEEDBACK_PATH = Path(__file__).resolve().parent.parent / "feedback.jsonl"
 
+
+# ----------------------------------------------------------------------
+# Startup bootstrap: load the knowledge base and build the vector index.
+# Models are downloaded once on first run and cached in backend/chroma_store.
+# ----------------------------------------------------------------------
 knowledge = load_knowledge(settings.knowledge_csv_path)
+vector_store = VectorStore(
+    persist_dir=settings.vector_store_path,
+    embedding_model=settings.embedding_model,
+)
+vector_store.ensure_indexed(knowledge)
+
+pipeline = RagPipeline(knowledge, vector_store)
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -44,6 +55,7 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
+    """Liveness probe used by the mobile app on launch."""
     return HealthResponse(
         status="ok",
         knowledge_count=len(knowledge),
@@ -54,102 +66,19 @@ def health() -> HealthResponse:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest) -> ChatResponse:
+    """Answer a farming question via the RAG pipeline."""
     question = body.message.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Message is empty")
 
-    scored = retrieve(question, knowledge, top_k=settings.retrieval_top_k)
-    strong = [item for item in scored if item.score >= settings.min_retrieval_score]
-    top = strong[0].record if strong else None
-
-    farming = looks_like_farming(question) or bool(strong) or bool(body.history)
-    if not farming:
-        return ChatResponse(
-            answer=OUT_OF_SCOPE_REPLY,
-            intent="out_of_scope",
-            out_of_sc3ope=True,
-            used_llm=False,
-            sources=[],
-        )
-
-    sources = [
-        RetrievedSource(
-            id=item.record.id,
-            crop=item.record.crop,
-            topic=item.record.topic,
-            score=round(item.score, 3),
-            question=item.record.question,
-        )
-        for item in strong
-    ]
-
-    intent = guess_intent(question, top)
-    crop = top.crop if top else None
-    topic = top.topic if top else None
-    context = format_context(strong)
-    has_strong_match = bool(strong)
-
-    if settings.openrouter_api_key:
-        try:
-            answer = await generate_answer(
-                question=question,
-                context=context,
-                history=body.history,
-                has_strong_match=has_strong_match,
-            )
-            return ChatResponse(
-                answer=strip_markdown_noise(answer),
-                crop=crop,
-                topic=topic,
-                intent=intent,
-                sources=sources,
-                out_of_scope=False,
-                used_llm=True,
-                model=settings.openrouter_model,
-            )
-        except Exception as exc:  # noqa: BLE001 - fall back to retrieval answer
-            if top is not None:
-                return ChatResponse(
-                    answer=structured_from_record(top)
-                    + f"\n\n_(LLM unavailable: {exc})_",
-                    crop=crop,
-                    topic=topic,
-                    intent=intent,
-                    sources=sources,
-                    out_of_scope=False,
-                    used_llm=False,
-                    model=None,
-                )
-            raise HTTPException(status_code=502, detail=f"OpenRouter error: {exc}") from exc
-
-    # No API key: retrieval-only mode for local demos
-    if top is not None:
-        return ChatResponse(
-            answer=structured_from_record(top),
-            crop=crop,
-            topic=topic,
-            intent=intent,
-            sources=sources,
-            out_of_scope=False,
-            used_llm=False,
-            model=None,
-        )
-
-    return ChatResponse(
-        answer=(
-            "I could not find matching farming knowledge for that question yet. "
-            "Try asking about rice, tomato, chili, pests, fertilizer, or watering. "
-            "Add OPENROUTER_API_KEY to enable full AI answers."
-        ),
-        intent=intent,
-        out_of_scope=False,
-        used_llm=False,
-        sources=[],
-    )
+    # All decision logic (retrieval, no-knowledge reply, LLM degradation)
+    # lives inside RagPipeline.answer; the HTTP layer just forwards the result.
+    return await pipeline.answer(question, body.history)
 
 
 @app.post("/feedback", response_model=FeedbackResponse)
 def feedback(body: FeedbackRequest) -> FeedbackResponse:
+    """Persist a thumbs-up/down + source ids for later quality analysis."""
     FEEDBACK_PATH.parent.mkdir(parents=True, exist_ok=True)
     row = {
         "ts": datetime.now(timezone.utc).isoformat(),

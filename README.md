@@ -46,8 +46,9 @@ Edit `mobile/src/config.ts` → `API_BASE_URL` if needed:
 
 ## 3. Data
 
-- Source CSV: `data/agriculture_qa.csv`
-- Backend loads this for retrieval + RAG context.
+- Source CSV: `data/agriculture.csv` (Myanmar knowledge base)
+- Backend loads this into a local ChromaDB vector store (semantic search) for RAG context.
+- No knowledge match → answers fall back to the LLM, but only for agriculture questions.
 
 ## Security
 
