@@ -47,8 +47,8 @@ const en: Strings = {
   settings: {
     darkMode: "Dark mode",
     language: "Language",
-    english: "English",
-    myanmar: "မြန်မာ",
+    english: "ENG",
+    myanmar: "MM",
   },
 };
 

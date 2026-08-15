@@ -36,9 +36,13 @@ export default function ChatScreen({
   const listRef = useRef<FlatList<UiMessage>>(null);
   const scrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const settleTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastCount = useRef(messages.length);
 
-  // Scroll to the bottom when content grows, animating once and then
-  // snapping to the end so the newest message is always visible.
+  // Scroll to the bottom when a NEW message arrives, animating once and then
+  // snapping to the end so the newest message is always visible. Content can
+  // also resize for other reasons (e.g. the language switch re-wrapping
+  // existing text) — only scroll on an actual message-count increase so the
+  // list never jumps on language change.
   const scrollToBottom = () => {
     if (scrollTimeout.current) clearTimeout(scrollTimeout.current);
     if (settleTimeout.current) clearTimeout(settleTimeout.current);
@@ -48,6 +52,13 @@ export default function ChatScreen({
     settleTimeout.current = setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: false });
     }, 500);
+  };
+
+  const onContentSizeChange = () => {
+    if (messages.length > lastCount.current) {
+      lastCount.current = messages.length;
+      scrollToBottom();
+    }
   };
 
   // Clean up pending timers on unmount.
@@ -77,7 +88,7 @@ export default function ChatScreen({
         data={messages}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
-        onContentSizeChange={scrollToBottom}
+        onContentSizeChange={onContentSizeChange}
         ListFooterComponent={loading ? <TypingIndicator /> : null}
         ListHeaderComponent={
           messages.length <= 1 ? (

@@ -7,8 +7,9 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { UiMessage } from "../api/types";
+import type { Lang } from "../i18n";
 import { useSettings } from "../settings";
-import type { ThemeColors } from "../theme";
+import { localizedFontSize, type ThemeColors } from "../theme";
 
 type Props = {
   message: UiMessage;
@@ -16,10 +17,11 @@ type Props = {
 };
 
 export default function MessageBubble({ message, onFeedback }: Props) {
-  const { colors, t } = useSettings();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { colors, t, lang } = useSettings();
+  const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   const isUser = message.role === "user";
+  const isWelcome = message.id === "welcome";
   const tags = [message.crop, message.topic || message.intent]
     .filter(Boolean)
     .join(" · ");
@@ -28,17 +30,32 @@ export default function MessageBubble({ message, onFeedback }: Props) {
     !isUser && message.id !== "welcome" && !message.outOfScope;
 
   return (
-    <View style={[styles.bubble, isUser ? styles.userBubble : styles.botBubble]}>
+    <View
+      style={[
+        styles.bubble,
+        isUser ? styles.userBubble : styles.botBubble,
+        isWelcome && styles.welcomeBubble,
+      ]}
+    >
       {!isUser && tags ? <Text style={styles.tags}>{tags}</Text> : null}
 
-      <Text style={[styles.text, isUser && styles.userText]}>
+      <Text
+        style={[
+          styles.text,
+          isUser && styles.userText,
+          isWelcome && styles.welcomeText,
+        ]}
+        numberOfLines={isWelcome ? 12 : undefined}
+      >
         {message.content}
       </Text>
 
       {!isUser && message.sources && message.sources.length > 0 ? (
-        <Text style={styles.source}>
+        <Text style={styles.source} numberOfLines={1}>
           {t.message.source}: {message.sources.map((s) => s.id).join(", ")}
-          {message.usedLlm ? ` · ${t.message.llm}` : ` · ${t.message.retrieval}`}
+          {message.usedLlm
+            ? ` · ${t.message.llm}`
+            : ` · ${t.message.retrieval}`}
         </Text>
       ) : null}
 
@@ -53,6 +70,7 @@ export default function MessageBubble({ message, onFeedback }: Props) {
                 styles.feedbackText,
                 message.feedback === "up" && styles.feedbackActive,
               ]}
+              numberOfLines={1}
             >
               👍 {t.message.useful}
             </Text>
@@ -66,6 +84,7 @@ export default function MessageBubble({ message, onFeedback }: Props) {
                 styles.feedbackText,
                 message.feedback === "down" && styles.feedbackActive,
               ]}
+              numberOfLines={1}
             >
               👎 {t.message.notUseful}
             </Text>
@@ -76,7 +95,7 @@ export default function MessageBubble({ message, onFeedback }: Props) {
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
     bubble: {
       maxWidth: "92%",
@@ -94,22 +113,38 @@ const createStyles = (colors: ThemeColors) =>
       borderWidth: 1,
       borderColor: colors.borderLight,
     },
+    welcomeBubble: {
+      height: 300,
+      justifyContent: "center",
+      overflow: "hidden",
+    },
+    welcomeText: {
+      textAlign: "left",
+      lineHeight: localizedFontSize(28, lang),
+    },
     tags: {
-      fontSize: 11,
+      fontSize: localizedFontSize(11, lang),
       color: colors.muted,
       marginBottom: 6,
       textTransform: "capitalize",
     },
     text: {
-      fontSize: 15,
-      lineHeight: 30,
+      fontSize: localizedFontSize(15, lang),
+      lineHeight: localizedFontSize(30, lang),
       color: colors.textBody,
       textAlignVertical: "top",
     },
     userText: { color: "#fff" },
-    source: { marginTop: 8, fontSize: 11, color: colors.muted },
+    source: {
+      marginTop: 8,
+      fontSize: localizedFontSize(11, lang),
+      color: colors.muted,
+    },
     feedbackRow: { flexDirection: "row", gap: 12, marginTop: 10 },
-    feedbackBtn: { paddingVertical: 2 },
-    feedbackText: { fontSize: 12, color: colors.muted },
+    feedbackBtn: { paddingVertical: 2, flexShrink: 1 },
+    feedbackText: {
+      fontSize: localizedFontSize(12, lang),
+      color: colors.muted,
+    },
     feedbackActive: { color: colors.primary, fontWeight: "700" },
   });

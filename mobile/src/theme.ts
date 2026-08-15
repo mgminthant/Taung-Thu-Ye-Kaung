@@ -5,6 +5,16 @@
  * `settings.tsx`) rather than importing `lightColors` directly, so styles
  * react to the light/dark switcher in the sidebar.
  */
+import type { Lang } from "./i18n";
+
+/** Myanmar glyphs render wider/taller than Latin at the same point size, so
+ *  scale Myanmar font sizes down to visually match English text. */
+export const MYANMAR_FONT_SCALE = 0.9;
+
+/** Resolve a font size for the active language (slightly smaller for Myanmar). */
+export function localizedFontSize(size: number, lang: Lang): number {
+  return lang === "mm" ? Math.round(size * MYANMAR_FONT_SCALE) : size;
+}
 export const lightColors = {
   /** App background (soft green). */
   bg: "#eef5ea",

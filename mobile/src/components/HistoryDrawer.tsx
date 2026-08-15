@@ -30,8 +30,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Conversation } from "../api/types";
+import type { Lang } from "../i18n";
 import { useSettings } from "../settings";
-import { glassConfig, type ThemeColors } from "../theme";
+import { glassConfig, localizedFontSize, type ThemeColors } from "../theme";
 
 type Props = {
   /** Whether the drawer is currently rendered (true during open+close). */
@@ -70,7 +71,7 @@ export default function HistoryDrawer({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, t, isDark, lang, toggleTheme, setLang } = useSettings();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   // The ⋮ menu: holds which row it is open for and its screen coordinates.
   const [menuFor, setMenuFor] = useState<MenuPos | null>(null);
@@ -167,7 +168,7 @@ export default function HistoryDrawer({
           {/* Drawer header (pushed below the status bar via safe-area inset). */}
           <View style={[styles.drawerHeader, { paddingTop: insets.top + 12 }]}>
             <Text
-              style={styles.drawerTitle}
+              style={[styles.drawerTitle, styles.drawerHeaderTitle]}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.7}
@@ -182,7 +183,14 @@ export default function HistoryDrawer({
               accessibilityLabel={t.drawer.startNewChat}
             >
               <Ionicons name="add" size={16} color="#fff" />
-              <Text style={styles.newChatText}>{t.drawer.newChat}</Text>
+              <Text
+                style={styles.newChatText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
+                {t.drawer.newChat}
+              </Text>
             </Pressable>
           </View>
 
@@ -298,7 +306,7 @@ export default function HistoryDrawer({
                     lang === "en" && styles.langBtnTextActive,
                   ]}
                 >
-                  English
+                  {t.settings.english}
                 </Text>
               </Pressable>
               <Pressable
@@ -396,7 +404,7 @@ export default function HistoryDrawer({
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
     flex: { flex: 1 },
     overlay: {
@@ -439,19 +447,29 @@ const createStyles = (colors: ThemeColors) =>
       borderBottomWidth: 1,
       borderBottomColor: colors.borderLight,
     },
-    drawerTitle: { fontSize: 15, fontWeight: "700", color: colors.textDark },
+    drawerTitle: {
+      fontSize: localizedFontSize(15, lang),
+      fontWeight: "700",
+      color: colors.textDark,
+    },
+    drawerHeaderTitle: { flex: 1, flexShrink: 1, marginRight: 10 },
     newChatBtn: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "center",
       gap: 2,
-      minWidth: 92,
+      width: 92,
       height: 30,
       backgroundColor: colors.primary,
       borderRadius: 10,
       paddingHorizontal: 10,
     },
-    newChatText: { color: "#fff", fontSize: 12, fontWeight: "700" },
+    newChatText: {
+      color: "#fff",
+      fontSize: localizedFontSize(12, lang),
+      fontWeight: "700",
+      flexShrink: 1,
+    },
     newChatDisabled: { opacity: 0.4 },
     drawerList: { flex: 1 },
     drawerRow: {
@@ -469,7 +487,10 @@ const createStyles = (colors: ThemeColors) =>
     },
     drawerItemActive: { backgroundColor: colors.activeBg },
     drawerTitleActive: { color: colors.primary },
-    drawerPreview: { fontSize: 12, color: colors.muted },
+    drawerPreview: {
+      fontSize: localizedFontSize(12, lang),
+      color: colors.muted,
+    },
     moreBtn: {
       position: "absolute",
       right: 4,
@@ -495,7 +516,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     settingsLabel: {
       flex: 1,
-      fontSize: 14,
+      fontSize: localizedFontSize(14, lang),
       color: colors.textDark,
     },
     langGroup: {
@@ -507,7 +528,7 @@ const createStyles = (colors: ThemeColors) =>
       overflow: "hidden",
     },
     langBtn: {
-      width: 88,
+      width: 64,
       paddingHorizontal: 12,
       paddingVertical: 7,
       alignItems: "center",
@@ -515,7 +536,7 @@ const createStyles = (colors: ThemeColors) =>
     },
     langBtnActive: { backgroundColor: colors.primary },
     langBtnText: {
-      fontSize: 13,
+      fontSize: localizedFontSize(13, lang),
       color: colors.muted,
       fontWeight: "600",
       textAlign: "center",
@@ -546,7 +567,10 @@ const createStyles = (colors: ThemeColors) =>
       paddingHorizontal: 12,
       paddingVertical: 10,
     },
-    menuItemText: { fontSize: 14, color: colors.textDark },
+    menuItemText: {
+      fontSize: localizedFontSize(14, lang),
+      color: colors.textDark,
+    },
     menuItemDanger: {
       borderTopWidth: 1,
       borderTopColor: colors.menuDivider,
@@ -565,7 +589,11 @@ const createStyles = (colors: ThemeColors) =>
       padding: 18,
       gap: 12,
     },
-    modalTitle: { fontSize: 17, fontWeight: "700", color: colors.textDark },
+    modalTitle: {
+      fontSize: localizedFontSize(17, lang),
+      fontWeight: "700",
+      color: colors.textDark,
+    },
     modalInput: {
       backgroundColor: colors.white,
       borderWidth: 1,
@@ -573,7 +601,7 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: 12,
       paddingHorizontal: 12,
       paddingVertical: 10,
-      fontSize: 15,
+      fontSize: localizedFontSize(15, lang),
       color: colors.textDark,
     },
     modalActions: { flexDirection: "row", justifyContent: "flex-end", gap: 10 },
@@ -582,7 +610,11 @@ const createStyles = (colors: ThemeColors) =>
       paddingHorizontal: 16,
       paddingVertical: 8,
     },
-    modalBtnText: { fontSize: 14, color: colors.muted, fontWeight: "600" },
+    modalBtnText: {
+      fontSize: localizedFontSize(14, lang),
+      color: colors.muted,
+      fontWeight: "600",
+    },
     modalBtnPrimary: { backgroundColor: colors.primary },
     modalBtnPrimaryText: { color: "#fff" },
   });

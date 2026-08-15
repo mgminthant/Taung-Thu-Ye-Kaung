@@ -47,8 +47,8 @@ const mm: Strings = {
   settings: {
     darkMode: "ညဘက်မုဒ်",
     language: "ဘာသာစကား",
-    english: "English",
-    myanmar: "မြန်မာ",
+    english: "ENG",
+    myanmar: "MM",
   },
 };
 

@@ -14,7 +14,8 @@ import {
 } from "react-native";
 
 import { useSettings } from "../settings";
-import type { ThemeColors } from "../theme";
+import type { Lang } from "../i18n";
+import { localizedFontSize, type ThemeColors } from "../theme";
 
 type Props = {
   value: string;
@@ -29,8 +30,8 @@ export default function Composer({
   onSend,
   loading,
 }: Props) {
-  const { colors, t } = useSettings();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { colors, t, lang } = useSettings();
+  const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   // Disable send when there is no text, or while the backend is replying.
   const disabled = !value.trim() || loading;
@@ -62,7 +63,7 @@ export default function Composer({
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
     composer: {
       flexDirection: "row",
@@ -73,16 +74,15 @@ const createStyles = (colors: ThemeColors) =>
     },
     input: {
       flex: 1,
-      minHeight: 44,
-      maxHeight: 120,
+      height: 44,
       backgroundColor: colors.white,
       borderWidth: 1,
       borderColor: colors.border,
       borderRadius: 14,
       paddingHorizontal: 14,
       paddingVertical: 12,
-      fontSize: 16,
-      lineHeight: 24,
+      fontSize: localizedFontSize(16, lang),
+      lineHeight: localizedFontSize(24, lang),
       color: colors.textDark,
       textAlignVertical: "center",
     },

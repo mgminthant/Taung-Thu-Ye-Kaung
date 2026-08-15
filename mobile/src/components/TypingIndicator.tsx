@@ -5,11 +5,12 @@ import { useMemo } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useSettings } from "../settings";
-import type { ThemeColors } from "../theme";
+import type { Lang } from "../i18n";
+import { localizedFontSize, type ThemeColors } from "../theme";
 
 export default function TypingIndicator() {
-  const { colors, t } = useSettings();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { colors, t, lang } = useSettings();
+  const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   return (
     <View style={[styles.bubble, styles.botBubble, styles.row]}>
@@ -19,7 +20,7 @@ export default function TypingIndicator() {
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
     bubble: {
       maxWidth: "92%",
@@ -41,5 +42,8 @@ const createStyles = (colors: ThemeColors) =>
       paddingVertical: 12,
       marginBottom: 10,
     },
-    text: { fontSize: 13, color: colors.muted },
+    text: {
+      fontSize: localizedFontSize(13, lang),
+      color: colors.muted,
+    },
   });

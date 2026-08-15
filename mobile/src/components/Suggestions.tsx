@@ -5,7 +5,8 @@ import { useMemo } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useSettings } from "../settings";
-import type { ThemeColors } from "../theme";
+import type { Lang } from "../i18n";
+import { localizedFontSize, type ThemeColors } from "../theme";
 
 type Props = {
   onSelect: (question: string) => void;
@@ -13,12 +14,14 @@ type Props = {
 };
 
 export default function Suggestions({ onSelect, disabled }: Props) {
-  const { colors, t } = useSettings();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const { colors, t, lang } = useSettings();
+  const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>{t.suggestions.tryAsking}</Text>
+      <Text style={styles.label} numberOfLines={1}>
+        {t.suggestions.tryAsking}
+      </Text>
       {t.suggestions.questions.map((q) => (
         <Pressable
           key={q}
@@ -26,18 +29,20 @@ export default function Suggestions({ onSelect, disabled }: Props) {
           onPress={() => onSelect(q)}
           disabled={disabled}
         >
-          <Text style={styles.chipText}>{q}</Text>
+          <Text style={styles.chipText} numberOfLines={2}>
+            {q}
+          </Text>
         </Pressable>
       ))}
     </View>
   );
 }
 
-const createStyles = (colors: ThemeColors) =>
+const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
     wrap: { gap: 8, marginBottom: 12 },
     label: {
-      fontSize: 12,
+      fontSize: localizedFontSize(12, lang),
       fontWeight: "700",
       color: colors.muted,
       textTransform: "uppercase",
@@ -48,8 +53,13 @@ const createStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       borderRadius: 12,
       paddingHorizontal: 12,
-      paddingVertical: 10,
+      height: 64,
+      justifyContent: "center",
       cursor: "pointer",
     },
-    chipText: { color: colors.textDark, fontSize: 14 },
+    chipText: {
+      color: colors.textDark,
+      fontSize: localizedFontSize(14, lang),
+      lineHeight: localizedFontSize(28, lang),
+    },
   });
