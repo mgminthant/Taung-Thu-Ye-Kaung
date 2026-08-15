@@ -11,6 +11,7 @@
  *  - a settings footer: dark/light mode switch + English/Myanmar switcher
  */
 import Ionicons from "@expo/vector-icons/Ionicons";
+import { BlurView } from "expo-blur";
 import { useMemo, useRef, useState } from "react";
 import {
   Animated,
@@ -30,7 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Conversation } from "../api/types";
 import { useSettings } from "../settings";
-import type { ThemeColors } from "../theme";
+import { glassConfig, type ThemeColors } from "../theme";
 
 type Props = {
   /** Whether the drawer is currently rendered (true during open+close). */
@@ -88,6 +89,11 @@ export default function HistoryDrawer({
     outputRange: [0, 1],
   });
 
+  // Fresh chats are stored with the English "New chat" sentinel title; render
+  // it in the active UI language so the drawer is fully localized.
+  const displayTitle = (title: string) =>
+    title === "New chat" ? t.drawer.newChat : title;
+
   const menuItem = menuFor
     ? conversations.find((c) => c.id === menuFor.id) ?? null
     : null;
@@ -130,7 +136,7 @@ export default function HistoryDrawer({
 
   const saveRename = () => {
     if (!renameFor) return;
-    onRenameConversation(renameFor, renameValue.trim() || "New chat");
+    onRenameConversation(renameFor, renameValue.trim() || t.drawer.newChat);
     cancelRename();
   };
 
@@ -143,21 +149,42 @@ export default function HistoryDrawer({
         <Pressable style={styles.flex} onPress={onClose} />
       </Animated.View>
 
-      <Animated.View style={[styles.drawer, { transform: [{ translateX }] }]}>
-        {/* Drawer header (pushed below the status bar via safe-area inset). */}
-        <View style={[styles.drawerHeader, { paddingTop: insets.top + 12 }]}>
-          <Text style={styles.drawerTitle}>{t.drawer.chats}</Text>
-          <Pressable
-            style={[styles.newChatBtn, isFreshActive && styles.newChatDisabled]}
-            onPress={onNewChat}
-            disabled={isFreshActive}
-            accessibilityRole="button"
-            accessibilityLabel={t.drawer.startNewChat}
-          >
-            <Ionicons name="add" size={16} color="#fff" />
-            <Text style={styles.newChatText}>{t.drawer.newChat}</Text>
-          </Pressable>
-        </View>
+      <Animated.View style={styles.drawer}>
+        {/* Static glass background, OUTSIDE the slide transform. iOS
+            UIVisualEffectView freezes on its first frame when animated via a
+            native-driver transform (blur looks missing until a re-render). */}
+        <BlurView
+          pointerEvents="none"
+          intensity={glassConfig.intensity}
+          tint={isDark ? glassConfig.tint.dark : glassConfig.tint.light}
+          style={styles.drawerBlur}
+        />
+
+        {/* Content slides in/out over the static glass. */}
+        <Animated.View
+          style={[styles.drawerContent, { transform: [{ translateX }] }]}
+        >
+          {/* Drawer header (pushed below the status bar via safe-area inset). */}
+          <View style={[styles.drawerHeader, { paddingTop: insets.top + 12 }]}>
+            <Text
+              style={styles.drawerTitle}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {t.drawer.chats}
+            </Text>
+            <Pressable
+              style={[styles.newChatBtn, isFreshActive && styles.newChatDisabled]}
+              onPress={onNewChat}
+              disabled={isFreshActive}
+              accessibilityRole="button"
+              accessibilityLabel={t.drawer.startNewChat}
+            >
+              <Ionicons name="add" size={16} color="#fff" />
+              <Text style={styles.newChatText}>{t.drawer.newChat}</Text>
+            </Pressable>
+          </View>
 
         <FlatList
           style={styles.drawerList}
@@ -188,7 +215,7 @@ export default function HistoryDrawer({
                     ]}
                     numberOfLines={1}
                   >
-                    {item.title}
+                    {displayTitle(item.title)}
                   </Text>
                   <Text style={styles.drawerPreview} numberOfLines={1}>
                     {preview}
@@ -199,7 +226,7 @@ export default function HistoryDrawer({
                   onPress={() => toggleMenu(item.id)}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel={`${t.drawer.actionsFor} ${item.title}`}
+                  accessibilityLabel={`${t.drawer.actionsFor} ${displayTitle(item.title)}`}
                 >
                   <Ionicons
                     name="ellipsis-horizontal"
@@ -215,7 +242,7 @@ export default function HistoryDrawer({
           }
         />
 
-        {/* Settings footer: theme + language switchers. */}
+        {/* Settings footer: theme + language switchers (on the shared glass). */}
         <View
           style={[
             styles.settingsFooter,
@@ -228,12 +255,19 @@ export default function HistoryDrawer({
               size={18}
               color={colors.textDark}
             />
-            <Text style={styles.settingsLabel}>{t.settings.darkMode}</Text>
+            <Text
+              style={styles.settingsLabel}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {t.settings.darkMode}
+            </Text>
             <Switch
               value={isDark}
               onValueChange={toggleTheme}
-              trackColor={{ false: colors.border, true: colors.primary }}
-              thumbColor={isDark ? colors.white : "#f4f3f4"}
+              trackColor={{ false: colors.mutedLight, true: colors.primary }}
+              thumbColor={isDark ? "#f5f5f5" : "#ffffff"}
             />
           </View>
 
@@ -243,7 +277,14 @@ export default function HistoryDrawer({
               size={18}
               color={colors.textDark}
             />
-            <Text style={styles.settingsLabel}>{t.settings.language}</Text>
+            <Text
+              style={styles.settingsLabel}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {t.settings.language}
+            </Text>
             <View style={styles.langGroup}>
               <Pressable
                 style={[styles.langBtn, lang === "en" && styles.langBtnActive]}
@@ -278,6 +319,7 @@ export default function HistoryDrawer({
             </View>
           </View>
         </View>
+        </Animated.View>
       </Animated.View>
 
       {/* Rename modal */}
@@ -380,9 +422,13 @@ const createStyles = (colors: ThemeColors) =>
       left: 0,
       width: "82%",
       maxWidth: 340,
-      backgroundColor: colors.drawerBg,
       borderRightWidth: 1,
       borderRightColor: colors.borderLight,
+      overflow: "hidden",
+    },
+    drawerContent: { flex: 1 },
+    drawerBlur: {
+      ...StyleSheet.absoluteFillObject,
     },
     drawerHeader: {
       flexDirection: "row",
@@ -397,11 +443,13 @@ const createStyles = (colors: ThemeColors) =>
     newChatBtn: {
       flexDirection: "row",
       alignItems: "center",
+      justifyContent: "center",
       gap: 2,
+      minWidth: 92,
+      height: 30,
       backgroundColor: colors.primary,
       borderRadius: 10,
       paddingHorizontal: 10,
-      paddingVertical: 6,
     },
     newChatText: { color: "#fff", fontSize: 12, fontWeight: "700" },
     newChatDisabled: { opacity: 0.4 },
@@ -410,12 +458,13 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       position: "relative",
+      height: 64,
     },
     drawerItem: {
       flex: 1,
       paddingHorizontal: 16,
       paddingRight: 48,
-      paddingVertical: 12,
+      paddingVertical: 8,
       gap: 2,
     },
     drawerItemActive: { backgroundColor: colors.activeBg },
@@ -442,8 +491,13 @@ const createStyles = (colors: ThemeColors) =>
       flexDirection: "row",
       alignItems: "center",
       gap: 10,
+      minHeight: 32,
     },
-    settingsLabel: { flex: 1, fontSize: 14, color: colors.textDark },
+    settingsLabel: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.textDark,
+    },
     langGroup: {
       flexDirection: "row",
       backgroundColor: colors.white,
@@ -452,9 +506,20 @@ const createStyles = (colors: ThemeColors) =>
       borderRadius: 10,
       overflow: "hidden",
     },
-    langBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+    langBtn: {
+      width: 88,
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      alignItems: "center",
+      justifyContent: "center",
+    },
     langBtnActive: { backgroundColor: colors.primary },
-    langBtnText: { fontSize: 13, color: colors.muted, fontWeight: "600" },
+    langBtnText: {
+      fontSize: 13,
+      color: colors.muted,
+      fontWeight: "600",
+      textAlign: "center",
+    },
     langBtnTextActive: { color: "#fff" },
     menuScrim: {
       ...StyleSheet.absoluteFillObject,

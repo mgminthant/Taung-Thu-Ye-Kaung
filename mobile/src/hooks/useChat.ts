@@ -20,7 +20,7 @@ import type {
   Conversation,
   UiMessage,
 } from "../api/types";
-import { makeWelcomeMessage } from "../api/types";
+import { makeWelcomeMessage, WELCOME_MESSAGE_ID } from "../api/types";
 import {
   loadActiveId,
   loadConversations,
@@ -96,6 +96,27 @@ export function useChat() {
       setHydrated(true);
     })();
   }, []);
+
+  // Re-localize the stored greeting whenever the UI language changes so
+  // existing (persisted) conversations show the welcome message in the
+  // active language instead of the language it was created in.
+  useEffect(() => {
+    if (!hydrated) return;
+    setConversations((prev) => {
+      let changed = false;
+      const next = prev.map((c) => {
+        const messages = c.messages.map((m) => {
+          if (m.id === WELCOME_MESSAGE_ID && m.content !== t.welcome) {
+            changed = true;
+            return { ...m, content: t.welcome };
+          }
+          return m;
+        });
+        return messages === c.messages ? c : { ...c, messages };
+      });
+      return changed ? next : prev;
+    });
+  }, [t.welcome, hydrated]);
 
   // Persist conversations whenever they change.
   useEffect(() => {

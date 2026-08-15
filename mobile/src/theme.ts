@@ -63,6 +63,19 @@ export type ThemeColors = {
 
 export type ThemeName = "light" | "dark";
 
+/**
+ * Drawer "glass" look — tweak these values to change the frosted effect.
+ * `intensity` is 1–100 (higher = more blur). Tints map to native iOS
+ * `UIVisualEffectView` materials (pass `tint` to BlurView).
+ */
+export const glassConfig = {
+  intensity: 90,
+  tint: {
+    light: "systemMaterialLight",
+    dark: "systemMaterialDark",
+  },
+} as const;
+
 /** Resolve the active palette for a theme name. */
 export function getColors(theme: ThemeName): ThemeColors {
   return theme === "dark" ? darkColors : lightColors;
