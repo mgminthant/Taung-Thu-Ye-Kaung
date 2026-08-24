@@ -34,6 +34,15 @@ mobile/expo-env.d.ts
 mobile/.kotlin/
 mobile/ios/
 mobile/android/
+
+# Next.js build output / cache (never commit — can exceed 100MB)
+.next/
+*.tsbuildinfo
+next-env.d.ts
+
+# Web local data & generated code
+web/dev.db*
+web/src/generated/
 npm-debug.*
 yarn-debug.*
 yarn-error.*
