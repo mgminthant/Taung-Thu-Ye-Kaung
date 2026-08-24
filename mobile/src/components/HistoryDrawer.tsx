@@ -31,6 +31,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import type { Conversation } from "../api/types";
 import type { Lang } from "../i18n";
+import { useAuth } from "../hooks/useAuth";
 import { useSettings } from "../settings";
 import { glassConfig, localizedFontSize, type ThemeColors } from "../theme";
 
@@ -71,6 +72,7 @@ export default function HistoryDrawer({
 }: Props) {
   const insets = useSafeAreaInsets();
   const { colors, t, isDark, lang, toggleTheme, setLang } = useSettings();
+  const { user, logout } = useAuth();
   const styles = useMemo(() => createStyles(colors, lang), [colors, lang]);
 
   // The ⋮ menu: holds which row it is open for and its screen coordinates.
@@ -250,13 +252,30 @@ export default function HistoryDrawer({
           }
         />
 
-        {/* Settings footer: theme + language switchers (on the shared glass). */}
+        {/* Settings footer: user info + theme + language + logout (on the shared glass). */}
         <View
           style={[
             styles.settingsFooter,
             { paddingBottom: Math.max(insets.bottom, 12) },
           ]}
         >
+          {/* User info */}
+          <View style={styles.settingsRow}>
+            <Ionicons
+              name={user?.isGuest ? "person-outline" : "person-circle-outline"}
+              size={18}
+              color={colors.textDark}
+            />
+            <Text
+              style={styles.settingsLabel}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.7}
+            >
+              {user?.isGuest ? t.settings.guest : user?.displayName ?? ""}
+            </Text>
+          </View>
+
           <View style={styles.settingsRow}>
             <Ionicons
               name={isDark ? "sunny-outline" : "moon-outline"}
@@ -326,6 +345,11 @@ export default function HistoryDrawer({
               </Pressable>
             </View>
           </View>
+
+          <Pressable style={styles.logoutRow} onPress={logout}>
+            <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+            <Text style={styles.logoutText}>{t.settings.logout}</Text>
+          </Pressable>
         </View>
         </Animated.View>
       </Animated.View>
@@ -406,7 +430,7 @@ export default function HistoryDrawer({
 
 const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
-    flex: { flex: 1 },
+    flex: { flex: 1, cursor: "pointer" },
     overlay: {
       position: "absolute",
       top: 0,
@@ -463,6 +487,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       backgroundColor: colors.primary,
       borderRadius: 10,
       paddingHorizontal: 10,
+      cursor: "pointer",
     },
     newChatText: {
       color: "#fff",
@@ -484,6 +509,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       paddingRight: 48,
       paddingVertical: 8,
       gap: 2,
+      cursor: "pointer",
     },
     drawerItemActive: { backgroundColor: colors.activeBg },
     drawerTitleActive: { color: colors.primary },
@@ -499,6 +525,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       width: 36,
       alignItems: "center",
       justifyContent: "center",
+      cursor: "pointer",
     },
     drawerEmpty: { padding: 16, color: colors.muted },
     settingsFooter: {
@@ -533,6 +560,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       paddingVertical: 7,
       alignItems: "center",
       justifyContent: "center",
+      cursor: "pointer",
     },
     langBtnActive: { backgroundColor: colors.primary },
     langBtnText: {
@@ -542,9 +570,24 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       textAlign: "center",
     },
     langBtnTextActive: { color: "#fff" },
+    logoutRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      minHeight: 32,
+      marginTop: 4,
+      cursor: "pointer",
+    },
+    logoutText: {
+      flex: 1,
+      fontSize: localizedFontSize(14, lang),
+      color: colors.danger,
+      fontWeight: "600",
+    },
     menuScrim: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: "transparent",
+      cursor: "pointer",
     },
     menu: {
       position: "absolute",
@@ -566,6 +609,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       gap: 8,
       paddingHorizontal: 12,
       paddingVertical: 10,
+      cursor: "pointer",
     },
     menuItemText: {
       fontSize: localizedFontSize(14, lang),
@@ -580,6 +624,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
     modalScrim: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: colors.modalBackdrop,
+      cursor: "pointer",
     },
     modalCard: {
       width: "82%",
@@ -609,6 +654,7 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       borderRadius: 10,
       paddingHorizontal: 16,
       paddingVertical: 8,
+      cursor: "pointer",
     },
     modalBtnText: {
       fontSize: localizedFontSize(14, lang),

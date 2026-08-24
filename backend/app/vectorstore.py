@@ -32,9 +32,18 @@ COLLECTION_PREFIX = "agriculture_knowledge"
 _RERANKER = None
 
 
-def _fingerprint(texts: list[str]) -> str:
-    """Short stable hash of the embedded texts, used to detect KB edits."""
-    digest = hashlib.sha256("\n".join(texts).encode("utf-8")).hexdigest()
+def _fingerprint(records: list[KnowledgeRecord]) -> str:
+    """Short stable hash of every field that affects retrieval.
+
+    Uses ``KnowledgeRecord.change_signature`` (id + updatedAt + title + content
+    + category + crop + tags + language) so a re-index fires on ANY edit —
+    including metadata-only changes like crop/category that live in the vector
+    store's metadata and drive filtering. Previously this hashed only the
+    embedded title+content, so metadata edits were silently ignored.
+    """
+    digest = hashlib.sha256(
+        "\n".join(r.change_signature() for r in records).encode("utf-8")
+    ).hexdigest()
     return digest[:16]
 
 
@@ -86,11 +95,36 @@ class SentenceTransformerEmbedding:
         return self._embed(input, prefix="passage: ")
 
 
+def _build_metadata(record: KnowledgeRecord) -> dict:
+    """Chroma metadata for a record, mirroring ``ensure_indexed`` exactly.
+
+    Metadata is kept separate from the embedded text so it can drive filtering
+    and analytics without polluting the semantic index. Empty values are
+    dropped because ChromaDB rejects empty strings / empty lists in metadata.
+    """
+    return {
+        k: v
+        for k, v in {
+            "title": record.title,
+            "category": record.category,
+            "crop": record.crop,
+            "crops": record.crops,
+            "categories": record.categories,
+            "tags": ",".join(record.tags) if record.tags else "",
+            "language": record.language,
+            "source": record.source,
+        }.items()
+        if v
+    }
+
+
 class VectorStore:
     """Persistent ChromaDB index over the knowledge base.
 
     - Stores one vector per knowledge record (the record's ``search_text()``).
     - ``ensure_indexed`` rebuilds the index only when the data or model changed.
+    - ``upsert_record`` / ``delete_record`` apply a single-article change
+      incrementally without re-embedding the whole KB.
     - ``search`` does dense retrieval + cross-encoder re-ranking.
     """
 
@@ -130,8 +164,8 @@ class VectorStore:
         """
         self._records = {record.id: record for record in records}
 
-        # Stable fingerprint of everything that is embedded.
-        fingerprint = _fingerprint([record.search_text() for record in records])
+        # Stable fingerprint of everything that affects retrieval.
+        fingerprint = _fingerprint(records)
 
         # Remove collections built with a different embedding model.
         current = self._collection_name()
@@ -157,30 +191,70 @@ class VectorStore:
             # Metadata is kept separate from the embedded text (title+content)
             # so it can drive filtering and analytics without polluting the
             # semantic index (see prd.md §13).
-            metadatas=[
-                {
-                    "title": record.title,
-                    "category": record.category,
-                    "crop": record.crop,
-                    "tags": record.tags,
-                    "language": record.language,
-                    "source": record.source,
-                }
-                for record in records
-            ],
+            metadatas=[_build_metadata(record) for record in records],
         )
 
         # Persist the fingerprint so future startups can detect content edits.
         # (Only touch the fingerprint key — chroma forbids changing hnsw:space.)
         collection.modify(metadata={"fingerprint": fingerprint})
 
-    def search(self, question: str, top_k: int) -> list[ScoredRecord]:
+    def _refresh_fingerprint(self) -> None:
+        """Keep the stored fingerprint in sync after an incremental edit.
+
+        ``ensure_indexed`` skips work when the stored fingerprint matches the
+        current data; an incremental upsert/delete must keep that fingerprint
+        accurate or a later full reload would wrongly skip (or wrongly rebuild).
+        """
+        try:
+            collection = self._get_collection()
+            collection.modify(
+                metadata={"fingerprint": _fingerprint(list(self._records.values()))}
+            )
+        except Exception:
+            pass
+
+    def upsert_record(self, record: KnowledgeRecord) -> None:
+        """Embed and index a single article, replacing any prior version.
+
+        Incremental alternative to ``ensure_indexed``: only one record is
+        embedded instead of the whole KB. Also updates the in-memory record map
+        (``search`` resolves ids through it) and refreshes the stored
+        fingerprint.
+        """
+        self._records[record.id] = record
+        collection = self._get_collection()
+        collection.upsert(
+            ids=[record.id],
+            documents=[record.search_text()],
+            metadatas=[_build_metadata(record)],
+        )
+        self._refresh_fingerprint()
+
+    def delete_record(self, article_id: str) -> None:
+        """Remove a single article from the index (used on portal deletes)."""
+        self._records.pop(article_id, None)
+        try:
+            collection = self._get_collection()
+            collection.delete(ids=[article_id])
+        except Exception:
+            pass
+        self._refresh_fingerprint()
+
+    def search(
+        self,
+        question: str,
+        top_k: int,
+        where: dict | None = None,
+    ) -> list[ScoredRecord]:
         """Retrieve the most relevant records for ``question``.
 
         1. ChromaDB returns ``semantic_candidate_k`` candidates by cosine distance.
         2. A cross-encoder re-ranks them and assigns ``relevance`` (a raw logit).
         3. Results are returned sorted by cosine similarity (score) for display;
            rag.py uses ``relevance`` to decide whether there is a real match.
+
+        ``where`` is an optional Chroma metadata filter (e.g. ``{"crop": "rice"}``)
+        used to restrict candidates when NER detected a crop.
         """
         collection = self._get_collection()
         count = collection.count()
@@ -194,6 +268,7 @@ class VectorStore:
             result = collection.query(
                 query_texts=[question],
                 n_results=min(candidate_k, count),
+                where=where,
                 include=["distances"],
             )
         except Exception:
