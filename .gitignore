@@ -58,8 +58,13 @@ yarn-error.*
 .idea/
 .vscode/
 .claude/
+.agents/
+.windsurf/
 *.swp
 *.swo
+
+# AI tool generated files
+skills-lock.json
 
 # Logs
 *.log
@@ -67,6 +72,4 @@ yarn-error.*
 .qwen
 /docs
 /prd.md
-
 /data
-/prd.md
