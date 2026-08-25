@@ -67,3 +67,6 @@ yarn-error.*
 .qwen
 /docs
 /prd.md
+
+/data
+/prd.md
