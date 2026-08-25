@@ -20,7 +20,7 @@ FarmBot AI is an intelligent agricultural assistant designed to answer farmers' 
 The system combines:
 
 - **Natural Language Processing (NLP)**
-- **Named Entity Recognition (NER)** — `Future`
+- **Named Entity Recognition (NER)** — `Built`
 - **Intent Classification**
 - **Sentence Embeddings**
 - **Semantic Vector Search**
@@ -69,8 +69,8 @@ FarmBot addresses these problems using NLP, semantic retrieval, AI-generated ans
 The system should:
 
 1. Normalize Myanmar text. — `Partial`
-2. Identify the user's intent. — `Partial` (keyword heuristics; classifier planned)
-3. Extract important agricultural entities. — `Future`
+2. Identify the user's intent. — `Built` (LLM classifier over the 10-intent taxonomy; keyword heuristics as offline fallback)
+3. Extract important agricultural entities. — `Built` (LLM NER, lexicon fallback)
 4. Convert questions into semantic embeddings. — `Built`
 5. Retrieve semantically relevant knowledge. — `Built`
 
@@ -110,13 +110,13 @@ Can: — `Built` (chat) / `Partial` (history saved on device)
 
 ### Administrator
 
-Can: — `Future` (admin portal)
+Can: — `Built` (admin portal)
 
-- Manage knowledge
-- Review feedback
-- Monitor chatbot performance
-- View analytics
-- Review AI-generated knowledge suggestions
+- Manage knowledge (CRUD articles via web portal)
+- Review feedback (useful/not-useful filter, cited articles)
+- Monitor chatbot performance (stats dashboard)
+- View analytics (feedback trends, most-cited articles)
+- Review AI-generated knowledge suggestions (Future)
 
 ---
 
@@ -178,7 +178,7 @@ Can: — `Future` (admin portal)
                 Admin Dashboard
 ```
 
-**What is implemented today vs. the full architecture:** today the pipeline runs *normalization → intent tagging (heuristic) → semantic search → knowledge → LLM → feedback → feedback.jsonl*. The LLM is **only called when the knowledge base contains a strong match**; otherwise the bot honestly replies that it has not learned the answer yet. NER, Data Analysis, Data Mining, and the Admin Dashboard are designed but not yet built (see [Build Status](#build-status-matrix)).
+**What is implemented today vs. the full architecture:** today the pipeline runs *normalization → agriculture gate → intent + NER (LLM, structured JSON; heuristic fallback) → entity-built semantic search → knowledge → LLM → feedback → feedback.jsonl*. The answer LLM is **only called when the knowledge base contains a strong match**; otherwise the bot honestly replies that it has not learned the answer yet. Data Analysis, Data Mining, and the Admin Dashboard are designed but not yet built (see [Build Status](#build-status-matrix)).
 
 ---
 
@@ -216,21 +216,27 @@ Intent classification determines:
 
 > **"What does the farmer want to know?"**
 
-`Status: Partial` — a keyword-heuristic tagger (`guess_intent`) runs today; the **LLM-driven classifier** over the 10-intent taxonomy + eval set is `Future`.
+`Status: Built` — the **LLM-driven classifier** labels the 10-intent taxonomy; the keyword-heuristic tagger (`guess_intent`) remains as the offline fallback.
 
 ### Current implementation (Built)
 
-`backend/app/retrieval.py` — `INTENT_KEYWORDS` tags each question as one of:
+`backend/app/llm.py` — `extract_intent_ner()` (one structured JSON call) labels each
+question as one of the target intents in §8 below. `backend/app/retrieval.py` —
+`guess_intent()` tags questions with the same 10-intent taxonomy using keyword
+heuristics when no LLM is configured:
 
 | Intent (current) | Example signal |
 | --- | --- |
-| plant_disease | disease, blast, blight, rust, spot, rot, fungus, curl |
-| pest | pest, insect, borer, aphid, moth, larvae, worm, holes |
-| fertilizer | fertilizer, nitrogen, npk, nutrient, compost |
-| watering | water, irrigate, irrigation, dry, wet, wilt |
-| technique | mulch, seedling, plant, technique |
-| safety | pesticide, chemical, safety, spray |
-| other | (fallback; or the matched record's topic) |
+| CULTIVATION | cultivate, plant, grow, seedling; စိုက် |
+| DISEASE_IDENTIFICATION | disease, blast, blight, rust, spot, rot, fungus; ရောဂါ |
+| DISEASE_TREATMENT | medicine, cure, treat, fungicide; ဆေး |
+| PEST_CONTROL | pest, insect, borer, aphid, moth, worm; ပိုး |
+| FERTILIZER | fertilizer, nitrogen, npk, nutrient, compost; မြေသြဇာ |
+| WATER_MANAGEMENT | water, irrigate, irrigation, dry, wet; ရေ |
+| HARVESTING | harvest, reaping; ရိတ် |
+| PREVENTION | prevent, protect, avoid, spray; ကာကွယ် |
+| GENERAL_INFORMATION | information, know |
+| OTHER | (fallback) |
 
 ### Target intent taxonomy (Future)
 
@@ -249,9 +255,9 @@ Start with approximately 8–10 broad categories — do not create hundreds of i
 | PREVENTION | ဘယ်လိုကာကွယ်ရမလဲ |
 | OTHER | အခြား |
 
-### Target approach (Future — LLM-driven)
+### Target approach (Built — LLM-driven)
 
-One LLM call classifies the intent **and** extracts the entities as structured JSON (see [§10](#10-intent--ner-together)), replacing the keyword tagger. The structured result drives query building and (optionally) filters retrieval:
+One LLM call classifies the intent **and** extracts the entities as structured JSON (see [§10](#10-intent--ner-together)); the keyword tagger is the offline fallback. The structured result drives query building and (optionally) filters retrieval:
 
 For:
 
@@ -277,13 +283,13 @@ NER determines:
 
 > **"What agricultural things is the farmer talking about?"**
 
-`Status: Future` — designed, not yet built. Today crop/category only come from the matched knowledge record, not from explicit entity extraction.
+`Status: Built` — the LLM extracts entities in the same structured call as intent; a lexicon fallback (`extract_entities`) covers offline mode.
 
-### Planned approach (LLM-first)
+### Planned approach (Built — LLM-first)
 
-- **Primary:** the **LLM extracts intent + NER together** in one structured call (see [§10](#10-intent--ner-together)) → JSON `{intent, crop, disease, pest, symptom, plant_part, location}`.
-- **Fallback / offline:** lexicon/rule-based extraction (crop, disease, pest, symptom dictionaries derived from the knowledge base) when no LLM key is configured.
-- **Evaluation:** Precision / Recall / F1 against a labeled eval set (see [Evaluation](#24-evaluation)).
+- **Primary:** the **LLM extracts intent + NER together** in one structured call (see [§10](#10-intent--ner-together)) → JSON `{intent, crop, disease, pest, symptom, plant_part, location}`. The crop value is grounded to the knowledge base's crop list (with Myanmar name hints) to avoid hallucinated entities.
+- **Fallback / offline:** lexicon/rule-based extraction (`extract_entities` — crop names from the KB, plus English dictionaries for disease/pest/symptom/plant-part).
+- **Evaluation:** Precision / Recall / F1 against a labeled eval set is `Future` (see [Evaluation](#24-evaluation)).
 
 ### Initial Entity Types
 
@@ -322,13 +328,13 @@ Structured result:
 }
 ```
 
-**Planned approach:** the LLM extracts intent + entities in one structured JSON call (primary), with lexicon/rule-based extraction as an offline fallback; measured with Precision / Recall / F1 against a labeled eval set (see [Evaluation](#24-evaluation)).
+**Built approach:** the LLM extracts intent + entities in one structured JSON call (primary), with lexicon/rule-based extraction as an offline fallback; formal Precision / Recall / F1 evaluation is planned (see [Evaluation](#24-evaluation)).
 
 ---
 
 ## 10. Intent + NER Together
 
-`Status: Future` — this is where the NLP layer becomes most useful.
+`Status: Built` — the NLP layer's structured stage.
 
 Question:
 
@@ -505,9 +511,9 @@ Source: internal
 
 ## 14. RAG Pipeline
 
-`Status: Built` (current) / `Future` (target — LLM Intent + NER stage)
+`Status: Built` — includes the LLM Intent + NER stage
 
-### Target pipeline (designed — LLM-driven Intent + NER)
+### Pipeline (built — LLM-driven Intent + NER)
 
 ```text
 USER
@@ -522,7 +528,7 @@ Myanmar Normalization
   ┌──────────────┐
   │      LLM     │
   │              │
-  │ Intent + NER │          ← Future stage: one call returns structured JSON
+  │ Intent + NER │          ← one call returns structured JSON
   └──────┬───────┘
          │
  Structured result  {intent, crop, disease, pest, symptom, plant_part, location}
@@ -561,9 +567,7 @@ Data Mining & Analysis
 
 ### Current implementation (Built)
 
-The current implementation (`backend/app/rag.py`) runs: semantic search → cross-encoder relevance check → keyword fallback → farming gate → **knowledge check** → LLM grounded in the retrieved `CONTEXT`. If the knowledge base has **no strong match**, the LLM is **never called** and the bot replies "I haven't learned that yet." If no LLM key is configured (or the LLM fails), it degrades to a structured answer from the best-matching article.
-
-The **target pipeline above** upgrades the NLP front-end: the keyword heuristic tagger (`guess_intent`) is replaced by an LLM that classifies the 10-intent taxonomy **and** extracts entities (NER) in a single structured call, and those entities are then used to build the retrieval query and (optionally) filter the ChromaDB results before re-ranking.
+The current implementation (`backend/app/rag.py`) runs: **agriculture gate** (LLM, keyword fallback) → **intent + NER stage** (one LLM structured call; lexicon fallback) → **entity-built query** → semantic search (optionally crop-filtered via Chroma metadata) → cross-encoder relevance check → keyword fallback → knowledge check → LLM grounded in the retrieved `CONTEXT`. If the knowledge base has **no strong match**, the answer LLM is **never called** and the bot replies "I haven't learned that yet." If no LLM key is configured (or the LLM fails), it degrades to a structured answer from the best-matching article. Entities are returned to the client (`entities`) and ready to feed the interaction/analytics datasets.
 
 ---
 
@@ -648,7 +652,7 @@ timestamp            ✓ stored
 
 Your system automatically generates datasets from actual usage. `Status: Partial` — feedback dataset exists; interaction dataset is `Future`.
 
-### Interaction Dataset (`Future`)
+### Interaction Dataset (`Future` — entities/intent already captured per question in the API response)
 
 ```text
 question
@@ -853,7 +857,7 @@ This provides human oversight.
 
 ## 22. Admin Portal
 
-`Status: Future` — planned as a Next.js + Tailwind web app.
+`Status: Built` — Next.js 16 + Tailwind CSS v4 + Prisma 7 + SQLite (`web/`).
 
 ### Dashboard
 
@@ -864,33 +868,31 @@ Positive Feedback    89%
 Knowledge Gaps       17
 ```
 
-### Pages
+### Pages (Built)
 
 ```text
-Dashboard
-Knowledge Base
- ├── Add
- ├── Edit
- ├── Delete
- └── Search
+Dashboard            /
+Knowledge Base       /knowledge
+ ├── Add             /knowledge/new
+ ├── Edit            /knowledge/[id]
+ ├── Delete          (via API)
+ └── Search/Filter   (client-side)
 
-Feedback
+Feedback             /feedback
  ├── Positive
  └── Negative
 
-Analytics
- ├── Questions
- ├── Intent
- ├── Crops
- ├── Diseases
- └── Feedback
+Analytics            /analytics
+ ├── Feedback trends
+ └── Most-cited articles
+```
 
-Data Mining
- ├── Clustering
- ├── Association Rules
- └── Trends
+### Remaining (Future)
 
+```text
+Data Mining          (clustering, association rules, trends)
 Knowledge Suggestions
+Intent analytics     (needs QuestionLog data from backend)
 ```
 
 ---
@@ -904,18 +906,21 @@ The backend keeps the **current stack** (no rewrite to ASP.NET/Node).
 | Layer | Technology |
 | --- | --- |
 | Mobile Application | React Native (Expo) — `mobile/` |
+| Admin Portal | Next.js 16 + Tailwind CSS v4 + Prisma 7 + SQLite — `web/` |
 | API Backend | FastAPI (Python) + Uvicorn — `backend/` |
-| Database | CSV knowledge base (`data/agriculture.csv`) + JSONL feedback (`feedback.jsonl`); optional PostgreSQL later |
+| Database | SQLite (`web/dev.db`) via Prisma 7 + built-in `sqlite3`; CSV knowledge base (`data/agriculture.csv`); JSONL feedback backup (`feedback.jsonl`) |
 | Vector Database | ChromaDB (persistent, `backend/chroma_store`) |
 | Embeddings | `sentence-transformers` — `multilingual-e5-small` |
 | Re-ranking | `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1` |
 | LLM | OpenRouter — `openai/gpt-4o-mini` (configurable) |
+| Auth | SHA-256 password hashing, SQLite `User` table |
+| i18n | English + Myanmar (`mobile/src/i18n/`) |
+| Theme | Light/dark mode (`mobile/src/theme.ts`) |
 
 ### Planned (Future)
 
 | Layer | Technology |
 | --- | --- |
-| Admin Portal | Next.js + Tailwind CSS + Recharts / Chart.js |
 | NER + Intent | LLM-driven extraction (one structured JSON call); lexicon/rule-based fallback for offline mode |
 | Data Mining / Analysis | Python — Pandas, NumPy, Scikit-learn, Matplotlib |
 | Database (optional) | PostgreSQL / MySQL when KB outgrows CSV |
@@ -1044,13 +1049,13 @@ Four different jobs, each technology with a clear reason to exist:
 
 | Component | Job | Status |
 | --- | --- | --- |
-| **NER** | Find *what* the farmer is talking about | Future |
-| **Intent Classification** | Find *what the farmer wants* | Partial (heuristics) → Future (classifier) |
+| **NER** | Find *what* the farmer is talking about | Built |
+| **Intent Classification** | Find *what the farmer wants* | Built (LLM + heuristic fallback) |
 | **Embeddings + Vector Search** | Find *which knowledge is semantically relevant* | Built |
 | **LLM** | Turn the retrieved knowledge into a natural answer | Built |
 | **Data Mining** | Discover patterns from actual FarmBot usage | Future |
 | **Data Analysis** | Explain and visualize those patterns | Future |
-| **Knowledge Portal** | Let humans maintain the source of truth | Partial (CSV) → Future (web portal) |
+| **Knowledge Portal** | Let humans maintain the source of truth | Built (Next.js + SQLite — `web/`) |
 
 This separation matters for the thesis/presentation: **AI is not used just because it is available; each component solves a specific problem.**
 
@@ -1061,29 +1066,40 @@ This separation matters for the thesis/presentation: **AI is not used just becau
 | Component | Status | Where |
 | --- | --- | --- |
 | Myanmar chat (mobile UI + history) | Built | `mobile/` |
+| Mobile auth (register / login / guest) | Built | `mobile/src/hooks/useAuth.tsx` + `backend/app/database.py` |
+| Mobile i18n (English + Myanmar) | Built | `mobile/src/i18n/` |
+| Mobile theme (light/dark) | Built | `mobile/src/theme.ts` |
 | Myanmar text tokenization / lowercase | Built | `backend/app/retrieval.py` |
 | Full Myanmar normalization (Zawgyi→Unicode) | Future | — |
 | Sentence embeddings (e5-small) | Built | `backend/app/vectorstore.py` |
 | Semantic search (ChromaDB) + cross-encoder re-rank | Built | `backend/app/vectorstore.py` |
 | Keyword retrieval fallback | Built | `backend/app/retrieval.py` |
-| Farming gate / out-of-scope refusal | Built | `backend/app/retrieval.py` + `rag.py` |
-| Intent tagging (6 keyword intents) | Built | `backend/app/retrieval.py` |
-| 10-intent taxonomy + LLM-driven classifier + eval set | Future | one LLM call → structured JSON |
-| NER via LLM (CROP/DISEASE/PEST/SYMPTOM/...) + lexicon fallback | Future | `prd.md` §9 |
+| Farming gate / out-of-scope refusal | Built | `backend/app/llm.py` + `rag.py` |
+| Intent classification (10-intent LLM classifier + heuristic fallback) | Built | `backend/app/llm.py` + `retrieval.py` |
+| NER via LLM (CROP/DISEASE/PEST/SYMPTOM/...) + lexicon fallback | Built | `backend/app/llm.py` + `retrieval.py` |
+| Entity-built retrieval query + optional crop filter | Built | `backend/app/rag.py` + `vectorstore.py` |
 | "I haven't learned that yet" no-knowledge reply | Built | `backend/app/rag.py` |
 | RAG LLM generation (OpenRouter, grounded only) | Built | `backend/app/llm.py` + `rag.py` |
 | Retrieval confidence threshold | Built | `backend/app/config.py` |
 | Flexible KB article structure (Title/Category/Crop/Content/Source/Tags) | Built | `data/agriculture.csv` + `knowledge.py` |
 | Embedding = Title + Content (metadata separate) | Built | `knowledge.py` + `vectorstore.py` |
 | Index auto-rebuild on content edits (fingerprint) | Built | `backend/app/vectorstore.py` |
-| Feedback (thumbs up/down + source ids) | Built | `backend/app/main.py` → `feedback.jsonl` |
+| Knowledge sync (SQLite → vector index rebuild) | Built | `backend/app/sqlite_loader.py` + `POST /sync-knowledge` |
+| LLM article classification (auto-suggest categories/crops/tags) | Built | `backend/app/classify.py` |
+| Feedback (thumbs up/down + source ids) | Built | `backend/app/main.py` → SQLite + `feedback.jsonl` |
+| Chat logging (intent, entities, response time) | Built | `backend/app/database.py` → `QuestionLog` |
+| Admin Portal — Dashboard | Built | `web/src/app/page.tsx` |
+| Admin Portal — Knowledge Base CRUD | Built | `web/src/app/knowledge/` |
+| Admin Portal — Feedback review | Built | `web/src/app/feedback/` |
+| Admin Portal — Analytics | Built | `web/src/app/analytics/` |
 | Feedback reason/comment fields | Future | — |
-| Interaction dataset (intent, entities, scores) | Future | — |
-| Data Analysis dashboard | Future | — |
+| Interaction dataset (full) | Future | — |
+| Data Analysis dashboard (full) | Future | — |
 | Data Mining (clustering / association / trends) | Future | — |
 | Knowledge Gap Detection | Future | — |
 | AI-assisted KB improvement (suggest→approve) | Future | — |
-| Admin Portal (Next.js) | Future | — |
+| Admin Portal — Data Mining views | Future | — |
+| Admin Portal — Knowledge Suggestions | Future | — |
 | Evaluation sets (intent/NER/retrieval/RAG) | Future | — |
 
 ---
@@ -1093,12 +1109,12 @@ This separation matters for the thesis/presentation: **AI is not used just becau
 ### Phase 0 — Foundation (done)
 - Expo chat app; FastAPI backend; OpenRouter RAG; flexible article knowledge base (Title/Category/Crop/Content/Source/Tags); ChromaDB semantic search over Title+Content; honest "haven't learned that yet" no-match reply; feedback collection.
 
-### Phase 1 — Stronger NLP (next)
-1. Explicit **text normalization** module (Zawgyi→Unicode, diacritics, spacing).
-2. Upgrade **intent classification** to the 10-intent taxonomy.
-3. **NER + intent** module — LLM-driven extraction (one structured JSON call); lexicon/rule-based fallback for offline mode.
-4. Build the **interaction dataset** (log intent, entities, similarity scores, response time per question).
-5. Build **evaluation sets** and report §24 metrics.
+### Phase 1 — Stronger NLP (mostly done)
+1. Explicit **text normalization** module (Zawgyi→Unicode, diacritics, spacing). — `Future`
+2. Upgrade **intent classification** to the 10-intent taxonomy. — **Done** (`llm.py` `extract_intent_ner`; `retrieval.py` `guess_intent` fallback)
+3. **NER + intent** module — LLM-driven extraction (one structured JSON call); lexicon/rule-based fallback for offline mode. — **Done**
+4. Build the **interaction dataset** (log intent, entities, similarity scores, response time per question). — `Future` (entities already returned in the API)
+5. Build **evaluation sets** and report §24 metrics. — `Future`
 
 ### Phase 2 — Data Mining & Analysis
 6. Question/feedback analytics with Pandas (volume, crops, diseases, intents, satisfaction).
@@ -1106,9 +1122,9 @@ This separation matters for the thesis/presentation: **AI is not used just becau
 8. **Knowledge Gap Detection** dashboard.
 
 ### Phase 3 — Admin Portal & Knowledge Management
-9. Next.js + Tailwind admin portal (Dashboard, Knowledge Base CRUD, Feedback, Analytics, Data Mining, Knowledge Suggestions). The flexible article structure is already in place in the CSV.
-10. Manage the KB through the portal instead of editing the CSV by hand (articles → DB).
-11. **AI-assisted KB improvement** with human approval → re-embed on save.
+9. Next.js + Tailwind admin portal (Dashboard, Knowledge Base CRUD, Feedback, Analytics). — **Done** (`web/`)
+10. Manage the KB through the portal instead of editing the CSV by hand (articles → SQLite via Prisma). — **Done**
+11. Data Mining views, Knowledge Suggestions, intent analytics (needs QuestionLog data from backend). — `Future`
 
 ---
 

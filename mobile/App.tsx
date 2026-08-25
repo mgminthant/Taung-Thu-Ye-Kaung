@@ -1,16 +1,3 @@
-/**
- * App — composition root.
- *
- * Wraps everything in SafeAreaProvider (needed by useSafeAreaInsets and
- * the safe-area SafeAreaView), SettingsProvider (theme + language), loads the
- * chat state via the useChat hook, and renders the four main UI blocks:
- *   Header        → history button + new chat button
- *   ChatScreen    → message list + composer
- *   HistoryDrawer → past-chats panel + rename/delete menus + settings
- *
- * ChatScreen is keyed by the active conversation so switching chats
- * remounts it (resetting the input and scroll position).
- */
 import { StatusBar } from "expo-status-bar";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import {
@@ -22,23 +9,53 @@ import ChatScreen from "./src/components/ChatScreen";
 import Header from "./src/components/Header";
 import HistoryDrawer from "./src/components/HistoryDrawer";
 import { useChat } from "./src/hooks/useChat";
+import { AuthProvider, useAuth } from "./src/hooks/useAuth";
 import { SettingsProvider, useSettings } from "./src/settings";
+import AuthScreen from "./src/screens/AuthScreen";
 
 export default function App() {
   return (
     <SafeAreaProvider>
       <SettingsProvider>
-        <AppShell />
+        <AuthProvider>
+          <AppShell />
+        </AuthProvider>
       </SettingsProvider>
     </SafeAreaProvider>
   );
 }
 
 function AppShell() {
+  const { user, hydrated: authHydrated } = useAuth();
+  const { colors, isDark, hydrated: settingsHydrated } = useSettings();
+
+  if (!authHydrated || !settingsHydrated) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <View style={styles.center}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!user) {
+    return (
+      <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <AuthScreen />
+      </SafeAreaView>
+    );
+  }
+
+  return <ChatApp />;
+}
+
+function ChatApp() {
   const chat = useChat();
   const { colors, isDark } = useSettings();
 
-  // Show a spinner while conversations load from local storage.
   if (!chat.hydrated) {
     return (
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]}>
@@ -66,6 +83,7 @@ function AppShell() {
         loading={chat.loading}
         onSend={chat.sendMessage}
         onFeedback={chat.toggleFeedback}
+        onFeedbackClear={chat.clearFeedback}
       />
 
       <HistoryDrawer

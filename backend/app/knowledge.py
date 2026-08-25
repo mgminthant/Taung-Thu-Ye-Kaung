@@ -1,27 +1,25 @@
-"""Knowledge base: loads data/agriculture.csv into records.
+"""Knowledge base record model.
 
-The CSV is the single source of truth for farming facts. Following the PRD
-(section 12/13), each row is a **flexible article**:
+Articles are loaded from the portal's SQLite DB (see sqlite_loader.py) — the
+CSV source was removed. Each row is a **flexible article**:
 
     id, title, category, crop, content, source, tags, region, language, verified
 
-Only ``title + content`` is embedded (``search_text``). Everything else
-(category, crop, tags, source, ...) is metadata kept separately so it can be
-used later for filtering and analytics.
+Only ``title + content`` (plus crop/categories/tags) is embedded via
+``search_text``. Everything else (category, crop, tags, source, ...) is metadata
+kept separately so it can be used later for filtering and analytics.
 """
 from __future__ import annotations
 
-import csv
-from dataclasses import dataclass
-from pathlib import Path
+from dataclasses import dataclass, field
 
 
 @dataclass
 class KnowledgeRecord:
-    """One article of the knowledge CSV.
+    """One article of the knowledge base.
 
-    ``tags`` is the ``;``-separated cell split into a list. ``language`` is
-    "my" (Myanmar) by default. ``verified`` marks human-checked content.
+    ``tags`` / ``categories`` / ``crops`` are lists. ``language`` is "my"
+    (Myanmar) by default. ``verified`` marks human-checked content.
     """
 
     id: str
@@ -34,46 +32,68 @@ class KnowledgeRecord:
     region: str
     language: str
     verified: bool
+    # Last-write timestamp (ISO from SQLite updatedAt). Used only to detect
+    # edits for incremental re-indexing; empty for CSV/legacy rows.
+    updated_at: str = ""
+    # All categories/crops (from the ArticleCategory / ArticleCrop relations),
+    # not just the legacy single-value columns. Embedded + used for filtering.
+    categories: list[str] = field(default_factory=list)
+    crops: list[str] = field(default_factory=list)
+    # Original (pre-canonicalization) crop labels as typed in the portal, e.g.
+    # "ကြက်သွန်နီ". Kept so the embedded text still contains the Burmese words
+    # farmers use, and so the agriculture gate can short-circuit on them.
+    crop_raw: str = ""
+    crops_raw: list[str] = field(default_factory=list)
 
     def search_text(self) -> str:
-        """The text that gets embedded: **Title + Content** only.
+        """The text that gets embedded for semantic search.
 
-        Metadata (category, crop, tags...) is deliberately NOT embedded — the
-        PRD says embedding should stay focused on the article text so semantic
-        search compares meaning, while metadata stays available for filtering.
+        Now includes **title + content + crop(s) + categories + tags** so a
+        user question that names a crop, category, or tag still matches the
+        article even when the body wording differs. Raw (pre-canonicalization)
+        crop labels are embedded too — the Burmese words farmers actually type
+        must stay in the multilingual embedding space even though metadata
+        filtering uses the canonical English value. Metadata that only drives
+        filtering (and is not useful as search text) is kept out.
         """
-        return f"{self.title}. {self.content}"
+        parts = [self.title, self.content]
+        extra: list[str] = []
+        if self.crop:
+            extra.append(self.crop)
+        extra.extend(self.crops)
+        if self.crop_raw and self.crop_raw not in extra:
+            extra.append(self.crop_raw)
+        for raw in self.crops_raw:
+            if raw and raw not in extra:
+                extra.append(raw)
+        extra.extend(self.categories)
+        extra.extend(self.tags)
+        if extra:
+            parts.append(" ".join(extra))
+        return ". ".join(p for p in parts if p)
 
+    def change_signature(self) -> str:
+        """Stable string reflecting every field that affects retrieval.
 
-def _split_list(value: str) -> list[str]:
-    """Parse a `;`-separated CSV cell into a clean list of strings."""
-    if not value:
-        return []
-    return [part.strip() for part in value.split(";") if part.strip()]
-
-
-def load_knowledge(csv_path: str | Path) -> list[KnowledgeRecord]:
-    """Read the CSV file and return one KnowledgeRecord per data row."""
-    path = Path(csv_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Knowledge CSV not found: {path}")
-
-    records: list[KnowledgeRecord] = []
-    with path.open(newline="", encoding="utf-8") as handle:
-        reader = csv.DictReader(handle)
-        for row in reader:
-            records.append(
-                KnowledgeRecord(
-                    id=row.get("id", "").strip(),
-                    title=row.get("title", "").strip(),
-                    category=row.get("category", "general_information").strip(),
-                    crop=row.get("crop", "").strip(),
-                    content=row.get("content", "").strip(),
-                    source=row.get("source", "").strip(),
-                    tags=_split_list(row.get("tags", "")),
-                    region=row.get("region", "").strip(),
-                    language=row.get("language", "my").strip(),
-                    verified=str(row.get("verified", "")).lower() == "true",
-                )
-            )
-    return records
+        Includes the embedded text AND all metadata (crop, crops, categories,
+        tags, language, raw label variants) plus the last-write time. Any edit
+        — to the body, a crop, a category, a tag, or even just ``updatedAt`` —
+        changes this, so a re-index is always triggered and the vector store
+        stays in sync with SQLite on every add/update/delete.
+        """
+        return "|".join(
+            [
+                self.id,
+                self.updated_at,
+                self.title,
+                self.content,
+                self.category,
+                self.crop,
+                ",".join(sorted(self.crops)),
+                ",".join(sorted(self.categories)),
+                ",".join(sorted(self.tags)),
+                self.language,
+                self.crop_raw,
+                ",".join(sorted(self.crops_raw)),
+            ]
+        )

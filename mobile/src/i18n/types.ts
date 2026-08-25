@@ -22,9 +22,14 @@ export type Strings = {
   message: {
     useful: string;
     notUseful: string;
-    source: string;
-    llm: string;
-    retrieval: string;
+    copy: string;
+    copied: string;
+    feedbackThanks: string;
+    feedbackTitle: string;
+    feedbackReasons: string[];
+    feedbackCommentPlaceholder: string;
+    feedbackSubmit: string;
+    feedbackCancel: string;
   };
   drawer: {
     chats: string;
@@ -45,5 +50,29 @@ export type Strings = {
     language: string;
     english: string;
     myanmar: string;
+    logout: string;
+    loggedAs: string;
+    guest: string;
+  };
+  auth: {
+    subtitle: string;
+    login: string;
+    signup: string;
+    guestContinue: string;
+    or: string;
+    username: string;
+    usernamePlaceholder: string;
+    password: string;
+    passwordPlaceholder: string;
+    confirmPassword: string;
+    confirmPasswordPlaceholder: string;
+    passwordMismatch: string;
+    continueWithGoogle: string;
+    googleFailed: string;
+    googleNotConfigured: string;
+    loginSubtitle: string;
+    signupSubtitle: string;
+    noAccount: string;
+    hasAccount: string;
   };
 };

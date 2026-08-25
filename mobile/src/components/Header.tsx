@@ -73,6 +73,7 @@ const createStyles = (colors: ThemeColors) =>
       height: 40,
       alignItems: "center",
       justifyContent: "center",
+      cursor: "pointer",
     },
     iconDisabled: { opacity: 0.35 },
   });

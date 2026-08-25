@@ -11,10 +11,10 @@
  * UI components receive plain props + callbacks from here, so they stay
  * "dumb" and easy to read.
  */
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated } from "react-native";
 
-import { sendChat, sendFeedback } from "../api/chat";
+import { sendChat, sendChatStream, sendFeedback } from "../api/chat";
 import type {
   ChatHistoryItem,
   Conversation,
@@ -22,15 +22,15 @@ import type {
 } from "../api/types";
 import { makeWelcomeMessage, WELCOME_MESSAGE_ID } from "../api/types";
 import {
-  loadActiveId,
   loadConversations,
   makeConversation,
   makeId,
-  saveActiveId,
   saveConversations,
   titleForMessages,
 } from "../chatStore";
+import { formatReply } from "../format";
 import { API_BASE_URL } from "../config";
+import { useAuth } from "./useAuth";
 import { useSettings } from "../settings";
 
 /** Format the last few messages for the API so the model has context. */
@@ -48,6 +48,7 @@ function backendErrorText(message: string): string {
 
 export function useChat() {
   const { t } = useSettings();
+  const { user } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
@@ -59,10 +60,20 @@ export function useChat() {
   // Mirrors `drawerOpen` without triggering re-renders (used inside callbacks).
   const drawerOpenRef = useRef(false);
 
+  // Latest messages/activeId for stable callbacks (so toggleFeedback keeps a
+  // fixed identity and React.memo on MessageBubble actually prevents
+  // re-rendering every bubble on each streamed token).
+  const messagesRef = useRef<UiMessage[]>([]);
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
+
   // ---- Derived values -------------------------------------------------
 
   const active = conversations.find((c) => c.id === activeId) ?? null;
   const messages = active?.messages ?? [];
+  messagesRef.current = messages;
 
   // A conversation is "fresh" when it only contains the welcome message.
   const isFreshActive =
@@ -75,27 +86,21 @@ export function useChat() {
     (c) => !(c.title === "New chat" && !c.messages.some((m) => m.role === "user")),
   );
 
-  // ---- Startup: load saved state --------------------------------------
+  // ---- Startup: load history + start fresh chat --------------------------
 
   useEffect(() => {
     (async () => {
-      const [list, storedActive] = await Promise.all([
-        loadConversations(),
-        loadActiveId(),
-      ]);
-      // First ever launch: create one welcome conversation.
-      let next = list.length > 0 ? list : [makeConversation([makeWelcomeMessage(t.welcome)])];
-      if (list.length === 0) {
-        await saveConversations(next);
-      }
-      // Fall back to the most recent chat if the saved id is stale.
-      const valid = next.some((c) => c.id === storedActive);
-      const id = valid ? storedActive! : next[next.length - 1].id;
+      const uid = user?.userId ?? "anonymous";
+      const saved = user?.isGuest ? [] : await loadConversations(uid);
+      // Always create a new conversation on launch.
+      const fresh = makeConversation([makeWelcomeMessage(t.welcome)]);
+      const next = [...saved, fresh];
+      await saveConversations(uid, next);
       setConversations(next);
-      setActiveId(id);
+      setActiveId(fresh.id);
       setHydrated(true);
     })();
-  }, []);
+  }, [user?.userId]);
 
   // Re-localize the stored greeting whenever the UI language changes so
   // existing (persisted) conversations show the welcome message in the
@@ -118,25 +123,23 @@ export function useChat() {
     });
   }, [t.welcome, hydrated]);
 
-  // Persist conversations whenever they change.
+  // Persist conversations whenever they change — skip for guest users.
   useEffect(() => {
-    if (!hydrated) return;
-    saveConversations(conversations);
-  }, [conversations, hydrated]);
-
-  // Persist the last open conversation id.
-  useEffect(() => {
-    if (hydrated && activeId) saveActiveId(activeId);
-  }, [activeId, hydrated]);
+    if (!hydrated || user?.isGuest) return;
+    const uid = user?.userId ?? "anonymous";
+    saveConversations(uid, conversations);
+  }, [conversations, hydrated, user?.isGuest, user?.userId]);
 
   // ---- Helpers ---------------------------------------------------------
 
-  const updateConversation = (
-    id: string,
-    fn: (c: Conversation) => Conversation,
-  ) => {
-    setConversations((prev) => prev.map((c) => (c.id === id ? fn(c) : c)));
-  };
+  // Stable: keeps `sendMessage`/`toggleFeedback` identities fixed so memoized
+  // children don't re-render on every streamed token.
+  const updateConversation = useCallback(
+    (id: string, fn: (c: Conversation) => Conversation) => {
+      setConversations((prev) => prev.map((c) => (c.id === id ? fn(c) : c)));
+    },
+    [setConversations],
+  );
 
   // ---- Drawer ----------------------------------------------------------
 
@@ -198,11 +201,13 @@ export function useChat() {
 
   // ---- Chatting --------------------------------------------------------
 
-  const sendMessage = async (raw: string) => {
-    const text = raw.trim();
-    if (!text || loading || !activeId) return;
+  const userId = user?.userId;
+  const sendMessage = useCallback(
+    async (raw: string) => {
+      const text = raw.trim();
+      if (!text || loadingRef.current || !activeIdRef.current) return;
 
-    const convoId = activeId;
+      const convoId = activeIdRef.current;
     const userMsg: UiMessage = { id: makeId(), role: "user", content: text };
 
     // Append the user message and auto-title the chat on first message.
@@ -217,63 +222,154 @@ export function useChat() {
     }));
     setLoading(true);
 
-    try {
-      const result = await sendChat(text, historyForApi(messages));
-      const assistantMsg: UiMessage = {
-        id: makeId(),
-        role: "assistant",
-        content: result.answer,
-        crop: result.crop,
-        topic: result.topic,
-        intent: result.intent,
-        sources: result.sources,
-        usedLlm: result.used_llm,
-        outOfScope: result.out_of_scope,
-        feedback: null,
-      };
-      updateConversation(convoId, (c) => ({
-        ...c,
-        messages: [...c.messages, assistantMsg],
-        updatedAt: Date.now(),
-      }));
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Could not reach the backend.";
+    // Reserve an id for the assistant bubble, but only insert it into the
+    // conversation once the first token (or the final answer) arrives. Creating
+    // it empty up-front left a blank bubble sitting next to the typing
+    // indicator during the whole load.
+    const botId = makeId();
+    let botCreated = false;
+
+    const ensureBot = (initial: Partial<UiMessage>) => {
+      if (botCreated) return;
+      botCreated = true;
       updateConversation(convoId, (c) => ({
         ...c,
         messages: [
           ...c.messages,
-          { id: makeId(), role: "assistant", content: backendErrorText(message) },
+          {
+            id: botId,
+            role: "assistant",
+            content: "",
+            feedback: null,
+            streaming: true,
+            ...initial,
+          },
         ],
         updatedAt: Date.now(),
       }));
+    };
+
+    // Apply a partial update to the streaming assistant bubble.
+    const patchBot = (patch: Partial<UiMessage>) =>
+      updateConversation(convoId, (c) => ({
+        ...c,
+        messages: c.messages.map((m) =>
+          m.id === botId ? { ...m, ...patch } : m,
+        ),
+        updatedAt: Date.now(),
+      }));
+
+    let acc = "";
+    try {
+      await sendChatStream(text, historyForApi(messagesRef.current), userId, {
+        onToken: (t) => {
+          acc += t;
+          // Format the live accumulator so the streamed view matches the
+          // finished (backend-formatted) answer instead of showing raw
+          // markdown like ** / ## mid-stream.
+          const formatted = formatReply(acc);
+          // Create the bubble on the very first token so it fills live.
+          ensureBot({ content: formatted });
+          patchBot({ content: formatted });
+        },
+        onDone: (payload) => {
+          // Swap the raw streamed text for the formatted final answer.
+          ensureBot({});
+          patchBot({
+            content: payload.answer ?? formatReply(acc),
+            crop: payload.crop,
+            topic: payload.topic,
+            intent: payload.intent,
+            sources: payload.sources ?? [],
+            usedLlm: payload.used_llm,
+            outOfScope: payload.out_of_scope,
+            needsClarification: payload.needs_clarification ?? false,
+            insufficientKnowledge: payload.insufficient_knowledge ?? false,
+            entities: payload.entities ?? null,
+            streaming: false,
+          });
+        },
+        onError: (e) => {
+          throw e;
+        },
+      });
+    } catch (err) {
+      // Streaming failed (or runtime lacks SSE support): fall back to the
+      // non-streaming endpoint, then surface a backend-down message.
+      try {
+        const result = await sendChat(text, historyForApi(messagesRef.current), userId);
+        ensureBot({});
+        patchBot({
+          content: result.answer,
+          crop: result.crop,
+          topic: result.topic,
+          intent: result.intent,
+          sources: result.sources,
+          usedLlm: result.used_llm,
+          outOfScope: result.out_of_scope,
+          needsClarification: result.needs_clarification ?? false,
+          insufficientKnowledge: result.insufficient_knowledge ?? false,
+          streaming: false,
+        });
+      } catch (err2) {
+        const message =
+          err2 instanceof Error ? err2.message : "Could not reach the backend.";
+        ensureBot({});
+        patchBot({ content: backendErrorText(message), streaming: false });
+      }
     } finally {
       setLoading(false);
     }
-  };
+    },
+    [updateConversation, setLoading, userId],
+  );
 
-  const toggleFeedback = async (msg: UiMessage, useful: boolean) => {
-    if (!activeId) return;
-    // Send feedback against the last user question that triggered this answer.
-    const lastUser = [...messages].reverse().find((m) => m.role === "user");
-    if (!lastUser) return;
-    try {
-      await sendFeedback({
-        message: lastUser.content,
-        answer: msg.content,
-        useful,
-        source_ids: (msg.sources ?? []).map((s) => s.id),
-      });
+  const toggleFeedback = useCallback(
+    async (msg: UiMessage, useful: boolean, reason?: string, comment?: string) => {
+      const activeId = activeIdRef.current;
+      if (!activeId) return;
+      // Send feedback against the last user question that triggered this answer.
+      const lastUser = [...messagesRef.current]
+        .reverse()
+        .find((m) => m.role === "user");
+      if (!lastUser) return;
+      try {
+        await sendFeedback({
+          message: lastUser.content,
+          answer: msg.content,
+          useful,
+          source_ids: (msg.sources ?? []).map((s) => s.id),
+          conversation_id: activeId,
+          reason: reason ?? null,
+          comment: comment ?? null,
+        });
+        updateConversation(activeId, (c) => ({
+          ...c,
+          messages: c.messages.map((m) =>
+            m.id === msg.id ? { ...m, feedback: useful ? "up" : "down" } : m,
+          ),
+        }));
+      } catch {
+        // Feedback is best-effort; ignore failures.
+      }
+    },
+    [],
+  );
+
+  // Toggle-off: clear the thumb on one message (UI only, no re-submit).
+  const clearFeedback = useCallback(
+    (msg: UiMessage) => {
+      const activeId = activeIdRef.current;
+      if (!activeId) return;
       updateConversation(activeId, (c) => ({
         ...c,
         messages: c.messages.map((m) =>
-          m.id === msg.id ? { ...m, feedback: useful ? "up" : "down" } : m,
+          m.id === msg.id ? { ...m, feedback: null } : m,
         ),
       }));
-    } catch {
-      // Feedback is best-effort; ignore failures.
-    }
-  };
+    },
+    [updateConversation],
+  );
 
   return {
     hydrated,
@@ -294,5 +390,6 @@ export function useChat() {
     renameConversation,
     sendMessage,
     toggleFeedback,
+    clearFeedback,
   };
 }

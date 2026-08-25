@@ -1,0 +1,13 @@
+{
+  "scheme": "farmbotmyanmar",
+  "ios": {
+    "bundleIdentifier": "com.anonymous.taung-thu-ye-khaung"
+  },
+  "android": {
+    "package": "com.anonymous.taungthuyekhaung"
+  },
+  "plugins": [
+    "expo-web-browser",
+    "expo-font"
+  ]
+}

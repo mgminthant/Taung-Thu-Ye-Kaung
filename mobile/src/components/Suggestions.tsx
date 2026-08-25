@@ -29,9 +29,7 @@ export default function Suggestions({ onSelect, disabled }: Props) {
           onPress={() => onSelect(q)}
           disabled={disabled}
         >
-          <Text style={styles.chipText} numberOfLines={2}>
-            {q}
-          </Text>
+          <Text style={styles.chipText}>{q}</Text>
         </Pressable>
       ))}
     </View>
@@ -40,12 +38,23 @@ export default function Suggestions({ onSelect, disabled }: Props) {
 
 const createStyles = (colors: ThemeColors, lang: Lang) =>
   StyleSheet.create({
-    wrap: { gap: 8, marginBottom: 12 },
+    wrap: {
+      gap: 8,
+      marginTop: 10,
+      marginBottom: 4,
+      paddingTop: 8,
+      paddingBottom: 2,
+      paddingHorizontal: 4,
+      alignItems: "stretch",
+      flexShrink: 0,
+    },
     label: {
       fontSize: localizedFontSize(12, lang),
       fontWeight: "700",
       color: colors.muted,
       textTransform: "uppercase",
+      textAlign: "left",
+      flexShrink: 0,
     },
     chip: {
       backgroundColor: colors.white,
@@ -53,13 +62,24 @@ const createStyles = (colors: ThemeColors, lang: Lang) =>
       borderColor: colors.border,
       borderRadius: 12,
       paddingHorizontal: 12,
-      height: 64,
+      paddingVertical: 10,
       justifyContent: "center",
+      alignItems: "stretch",
+      overflow: "visible",
+      flexShrink: 0,
       cursor: "pointer",
     },
     chipText: {
       color: colors.textDark,
       fontSize: localizedFontSize(14, lang),
+      // Generous line height (≈2×) so tall Myanmar glyphs aren't clipped at
+      // the top/bottom of each line (the previous tight value cut ~1/3).
       lineHeight: localizedFontSize(28, lang),
+      textAlign: "left",
+      // Let the Text stretch to the chip width via the flex parent instead of
+      // an explicit width — an explicit width can mis-measure and clip wrapped
+      // text under the New Architecture.
+      wordBreak: "break-word",
+      overflowWrap: "anywhere",
     },
   });
